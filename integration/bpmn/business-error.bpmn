@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_business" targetNamespace="http://example.com/camunda-stub-worker">
+  <bpmn:error id="business_error" name="Expected business error" errorCode="BUSINESS_ERROR"/>
+  <bpmn:process id="stub_business_error_process" name="Stub business error" isExecutable="true">
+    <bpmn:startEvent id="start"><bpmn:outgoing>to_task</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:sequenceFlow id="to_task" sourceRef="start" targetRef="stub_task"/>
+    <bpmn:serviceTask id="stub_task" name="Throw business error"><bpmn:extensionElements><zeebe:taskDefinition type="stub-business-error" retries="3"/></bpmn:extensionElements><bpmn:incoming>to_task</bpmn:incoming><bpmn:outgoing>normal_flow</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:boundaryEvent id="catch_business_error" attachedToRef="stub_task"><bpmn:outgoing>caught_flow</bpmn:outgoing><bpmn:errorEventDefinition errorRef="business_error"/></bpmn:boundaryEvent>
+    <bpmn:sequenceFlow id="normal_flow" sourceRef="stub_task" targetRef="unexpected_end"/>
+    <bpmn:sequenceFlow id="caught_flow" sourceRef="catch_business_error" targetRef="caught_end"/>
+    <bpmn:endEvent id="unexpected_end" name="Unexpected success"><bpmn:incoming>normal_flow</bpmn:incoming></bpmn:endEvent>
+    <bpmn:endEvent id="caught_end" name="Business error caught"><bpmn:incoming>caught_flow</bpmn:incoming></bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

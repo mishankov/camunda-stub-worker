@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "camunda-stub-worker",
+  "outputfilename": "camunda-stub-worker",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {"name": "Camunda Stub Worker contributors"},
+  "info": {
+    "companyName": "Camunda Stub Worker",
+    "productName": "Camunda Stub Worker",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright 2026",
+    "comments": "Local Camunda 8.5 stub worker"
+  }
+}

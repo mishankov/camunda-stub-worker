@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_success" targetNamespace="http://example.com/camunda-stub-worker">
+  <bpmn:process id="stub_success_process" name="Stub success" isExecutable="true">
+    <bpmn:startEvent id="start"><bpmn:outgoing>to_task</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:sequenceFlow id="to_task" sourceRef="start" targetRef="stub_task"/>
+    <bpmn:serviceTask id="stub_task" name="Stub success"><bpmn:extensionElements><zeebe:taskDefinition type="stub-success" retries="3"/></bpmn:extensionElements><bpmn:incoming>to_task</bpmn:incoming><bpmn:outgoing>to_end</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:sequenceFlow id="to_end" sourceRef="stub_task" targetRef="end"/>
+    <bpmn:endEvent id="end"><bpmn:incoming>to_end</bpmn:incoming></bpmn:endEvent>
+  </bpmn:process>
+</bpmn:definitions>

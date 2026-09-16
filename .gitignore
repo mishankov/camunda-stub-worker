@@ -1,0 +1,32 @@
+# Build and generated frontend output
+build/bin/
+frontend/dist/
+frontend/node_modules/
+frontend/package.json.md5
+frontend/wailsjs/
+
+# Local application data
+*.db
+*.db-shm
+*.db-wal
+
+# Test output
+coverage.out
+*.coverprofile
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+.zed/
+
+# Local development-agent configuration
+.agents/
+.codex/
+skills-lock.json
+
+# Local scratch process used during development
+dummy_proc.bpmn
+
+# Original implementation brief (kept locally for reference)
+camunda-stub-worker-spec.md

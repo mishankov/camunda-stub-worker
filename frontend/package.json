@@ -1,0 +1,26 @@
+{
+  "name": "camunda-stub-worker-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.0",
+    "svelte": "5.57.0",
+    "svelte-check": "4.3.2",
+    "typescript": "5.9.2",
+    "vite": "8.3.0"
+  },
+  "dependencies": {
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/lint": "^6.9.7",
+    "@lezer/highlight": "^1.2.3",
+    "@lucide/svelte": "^1.46.0",
+    "codemirror": "^6.0.2"
+  }
+}

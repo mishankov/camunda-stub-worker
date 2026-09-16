@@ -1,0 +1,18 @@
+services:
+  zeebe:
+    image: camunda/zeebe:8.5.25
+    container_name: camunda-stub-worker-zeebe
+    ports:
+      - "26500:26500"
+    environment:
+      ZEEBE_BROKER_NETWORK_HOST: 0.0.0.0
+      ZEEBE_BROKER_GATEWAY_ENABLE: "true"
+      ZEEBE_BROKER_GATEWAY_NETWORK_HOST: 0.0.0.0
+      ZEEBE_BROKER_DATA_DISKUSAGECOMMANDWATERMARK: "0.998"
+      ZEEBE_BROKER_DATA_DISKUSAGEREPLICATIONWATERMARK: "0.999"
+      JAVA_TOOL_OPTIONS: -Xms512m -Xmx512m
+    volumes:
+      - zeebe-data:/usr/local/zeebe/data
+
+volumes:
+  zeebe-data:

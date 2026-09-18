@@ -53,5 +53,5 @@ jobs:
         run: wails build -clean -platform ${{ matrix.platform }} -webview2 download
       - uses: actions/upload-artifact@v7
         with:
-          name: camunda-stub-worker-${{ matrix.artifact }}
+          name: Camunda Stub Worker-${{ matrix.artifact }}
           path: build/bin/**

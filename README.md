@@ -61,7 +61,11 @@ Wails 2.15 system requirements:
 - macOS 10.13+ x64 or macOS 11+ arm64. Development requires Xcode Command Line Tools.
 - Linux x64 with GTK3 and WebKit2GTK. Distributions using `libwebkit2gtk-4.1` require the `webkit2_41` build tag.
 
-Release builds do not require Go or Node.js. Current artifacts are not publisher-signed or notarized; local macOS builds use Wails ad-hoc signing.
+Release builds do not require Go or Node.js. Current artifacts are not publisher-signed or notarized; local macOS builds use Wails ad-hoc signing. macOS releases are distributed as DMG images: open the image and drag **Camunda Stub Worker** onto the **Applications** shortcut. Before the first launch, remove the quarantine attribute:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
+```
 
 ## Development
 
@@ -91,7 +95,7 @@ wails build -clean -platform windows/amd64 -webview2 download
 wails build -clean -platform linux/amd64 -tags webkit2_41
 ```
 
-The macOS `.app` is written to `build/bin`. A Windows installer can be built with `-nsis` when NSIS is installed. `.github/workflows/build.yml` builds on native runners for each operating system.
+The macOS `Camunda Stub Worker.app` is written to `build/bin`. Release builds package it in a DMG with a custom volume icon and a fixed drag-to-Applications layout. A Windows installer can be built with `-nsis` when NSIS is installed. `.github/workflows/build.yml` builds on native runners for each operating system.
 
 ## Integration environment
 

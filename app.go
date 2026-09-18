@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -271,9 +269,8 @@ func (a *App) ImportProfileFile() (domain.Profile, error) {
 	}
 	return a.ImportProfileJSON(string(raw))
 }
-func (a *App) OpenDataDirectory() {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(a.dataDir)}
-	wailsruntime.BrowserOpenURL(a.ctx, u.String())
+func (a *App) OpenDataDirectory() error {
+	return openDirectory(a.dataDir)
 }
 func (a *App) FormatJSON(raw string) (string, error) {
 	if err := domain.ValidateJSONObject(raw); err != nil {

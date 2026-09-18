@@ -66,7 +66,25 @@
   async function submit(a:Activation){const d=drafts[a.id];await run(async()=>{await call('SaveDraft',a.id,d);await call('SubmitResponse',a.id,d);await reload()},'Response confirmed by Camunda')}
   async function saveDraft(a:Activation){await run(async()=>{await call('SaveDraft',a.id,drafts[a.id])},'Draft saved')}
   async function formatDraft(id:string){await run(async()=>{drafts[id].variablesJson=await call('FormatJSON',drafts[id].variablesJson)})}
-  async function applyDraftScenario(a:Activation){const id=draftScenarios[a.id];if(!id)return;await run(async()=>{drafts[a.id]=await call('ApplyScenario',a.id,id)},'Scenario copied to draft')}
+  function draftFromScenario(s:Scenario):Draft {
+    return {outcome:s.outcome,variablesJson:s.variablesJson,errorCode:s.errorCode,errorMessage:s.errorMessage,remainingRetries:s.remainingRetries,retryBackoffMs:s.retryBackoffMs}
+  }
+  async function applyDraftScenario(a:Activation,id:string){
+    if(!id)return
+    draftScenarios[a.id]=id
+    const scenario=scenarios.find(s=>s.id===id&&s.jobTypeConfigId===a.jobTypeConfigId)
+    if(!scenario)return
+    const previous=drafts[a.id]
+    drafts[a.id]=draftFromScenario(scenario)
+    showError('')
+    try {
+      const saved=await call<Draft>('ApplyScenario',a.id,id)
+      if(draftScenarios[a.id]===id)drafts[a.id]=saved
+    } catch(e:any) {
+      if(draftScenarios[a.id]===id)drafts[a.id]=previous
+      showError(e?.message||String(e))
+    }
+  }
 
   async function loadHistory(page=1){historyPage=page;history=await call('History',{profileId:selectedProfileId,jobType:historyType,outcome:historyOutcome,sendStatus:historyStatus,search:historySearch,fromUtc:historyFrom?new Date(historyFrom+'T00:00:00').toISOString():'',toUtc:historyTo?new Date(historyTo+'T23:59:59.999').toISOString():'',page})}
   function queueHistoryRefresh(){
@@ -100,7 +118,7 @@
   async function exportProfile(){await run(async()=>{await call('ExportProfileFile',selectedProfileId)},'Profile exported')}
   async function importProfile(){await run(async()=>{await call('ImportProfileFile');await reload()},'Profile imported')}
 
-  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{pending=pending.filter(x=>x.id!==a.id);if(a.mode==='manual'&&a.activationState==='active')pending=[...pending,a];queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(noticeTimer)window.clearTimeout(noticeTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
+  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(noticeTimer)window.clearTimeout(noticeTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
 </script>
 
 <svelte:head><title>Camunda Stub Worker</title></svelte:head>
@@ -146,9 +164,9 @@
     {:else if tab==='pending'}
       <section class="workspace">
       {#if !pending.length}<div class="empty"><div><Check size={24} strokeWidth={1.7}/></div><h3>No jobs awaiting response</h3><p>Jobs activated by manual workers will appear here.</p></div>{/if}
-      {#each pending as a}
+      {#each pending as a (a.id)}
         <article class="pending-card"><div class="pending-head"><div><span class="pill">{a.jobType}</span><h3>Job key <code>{a.jobKey}</code></h3><p>{a.bpmnProcessId} · {a.elementId} · received {fmtDate(a.receivedAt)}</p></div><span class="status running">Activation valid</span></div>
-          <div class="json-grid"><div><span class="field-label">Input variables</span><pre>{a.inputJson}</pre><details><summary>Custom headers</summary><pre>{a.customHeadersJson}</pre></details></div><div><label>Scenario<select bind:value={draftScenarios[a.id]} on:change={()=>applyDraftScenario(a)}><option value="">Select a scenario</option>{#each scenarios.filter(s=>s.jobTypeConfigId===a.jobTypeConfigId) as s}<option value={s.id}>{s.name}</option>{/each}</select></label><label>Outcome<select bind:value={drafts[a.id].outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label><textarea aria-label="Prepared response JSON" bind:value={drafts[a.id].variablesJson} spellcheck="false"></textarea><button class="link" on:click={()=>formatDraft(a.id)}>Format JSON</button>{#if drafts[a.id].outcome==='business_error'}<div class="two"><input bind:value={drafts[a.id].errorCode} placeholder="errorCode"/><input bind:value={drafts[a.id].errorMessage} placeholder="Message"/></div>{:else if drafts[a.id].outcome==='technical_failure'}<input bind:value={drafts[a.id].errorMessage} placeholder="Failure message"/><div class="two"><label>Remaining retries<input type="number" min="0" bind:value={drafts[a.id].remainingRetries}/></label><label>Backoff, ms<input type="number" min="0" bind:value={drafts[a.id].retryBackoffMs}/></label></div><small class="hint">remainingRetries is an absolute value. Reusing the same positive value may cause repeated activations.</small>{/if}</div></div>
+          <div class="json-grid"><div><span class="field-label">Input variables</span><pre>{a.inputJson}</pre><details><summary>Custom headers</summary><pre>{a.customHeadersJson}</pre></details></div><div><label>Scenario<select value={draftScenarios[a.id]||''} on:change={(e)=>applyDraftScenario(a,(e.currentTarget as HTMLSelectElement).value)}><option value="">Select a scenario</option>{#each scenarios.filter(s=>s.jobTypeConfigId===a.jobTypeConfigId) as s}<option value={s.id}>{s.name}</option>{/each}</select></label><label>Outcome<select bind:value={drafts[a.id].outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label><div class="draft-editor"><JsonEditor bind:value={drafts[a.id].variablesJson} ariaLabel="Prepared response JSON" compact/></div><button class="link" on:click={()=>formatDraft(a.id)}>Format JSON</button>{#if drafts[a.id].outcome==='business_error'}<div class="two"><input bind:value={drafts[a.id].errorCode} placeholder="errorCode"/><input bind:value={drafts[a.id].errorMessage} placeholder="Message"/></div>{:else if drafts[a.id].outcome==='technical_failure'}<input bind:value={drafts[a.id].errorMessage} placeholder="Failure message"/><div class="two"><label>Remaining retries<input type="number" min="0" bind:value={drafts[a.id].remainingRetries}/></label><label>Backoff, ms<input type="number" min="0" bind:value={drafts[a.id].retryBackoffMs}/></label></div><small class="hint">remainingRetries is an absolute value. Reusing the same positive value may cause repeated activations.</small>{/if}</div></div>
           <div class="submit-row"><button class="ghost" on:click={()=>saveDraft(a)} disabled={busy}>Save draft</button><button class="primary" on:click={()=>submit(a)} disabled={busy||a.sendStatus==='sending'}>Send to Camunda</button></div>
         </article>
       {/each}

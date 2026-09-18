@@ -56,7 +56,7 @@ jobs:
               publish_after_upload="$release_is_draft"
               echo "Reusing the existing release for $tag."
             else
-              create_args=("$tag" --target "$DEFAULT_BRANCH" --generate-notes --draft)
+              create_args=("$tag" --target "$DEFAULT_BRANCH" --generate-notes --notes-file .github/release-notes.md --draft)
               if [[ "$PRERELEASE" == "true" ]]; then
                 create_args+=(--prerelease)
               fi
@@ -130,24 +130,26 @@ jobs:
       - name: Package macOS build
         if: runner.os == 'macOS'
         env:
-          ASSET_NAME: camunda-stub-worker-${{ needs.prepare.outputs.safe_tag }}-${{ matrix.artifact }}.zip
+          ASSET_NAME: Camunda Stub Worker-${{ needs.prepare.outputs.safe_tag }}-${{ matrix.artifact }}.dmg
         run: |
           mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent build/bin/camunda-stub-worker.app "dist/$ASSET_NAME"
+          ./scripts/create-macos-dmg.sh \
+            "build/bin/Camunda Stub Worker.app" \
+            "dist/$ASSET_NAME"
 
       - name: Package Linux build
         if: runner.os == 'Linux'
         env:
-          ASSET_NAME: camunda-stub-worker-${{ needs.prepare.outputs.safe_tag }}-${{ matrix.artifact }}.tar.gz
+          ASSET_NAME: Camunda Stub Worker-${{ needs.prepare.outputs.safe_tag }}-${{ matrix.artifact }}.tar.gz
         run: |
           mkdir -p dist
-          tar -C build/bin -czf "dist/$ASSET_NAME" camunda-stub-worker
+          tar -C build/bin -czf "dist/$ASSET_NAME" "Camunda Stub Worker"
 
       - name: Package Windows build
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          ASSET_NAME: camunda-stub-worker-${{ needs.prepare.outputs.safe_tag }}-${{ matrix.artifact }}.zip
+          ASSET_NAME: Camunda Stub Worker-${{ needs.prepare.outputs.safe_tag }}-${{ matrix.artifact }}.zip
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path build/bin/* -DestinationPath "dist/$env:ASSET_NAME"

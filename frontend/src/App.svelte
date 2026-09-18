@@ -18,6 +18,9 @@
   let connection:any = { state:'offline', message:'Connection not checked', selectedVersion:'8.5' }
   let dataPath = ''
   let refreshingLiveState = false
+  let historyRefreshTimer:number|undefined
+  let refreshingHistory = false
+  let historyRefreshQueued = false
   let currentProfile:Profile|undefined
   let editingType:JobType|null = null, editingScenario:Scenario|null = null, editingProfile:Profile|null = null
   let confirmation:Confirmation|null = null
@@ -61,6 +64,26 @@
   async function applyDraftScenario(a:Activation){const id=draftScenarios[a.id];if(!id)return;await run(async()=>{drafts[a.id]=await call('ApplyScenario',a.id,id)},'Scenario copied to draft')}
 
   async function loadHistory(page=1){historyPage=page;history=await call('History',{profileId:selectedProfileId,jobType:historyType,outcome:historyOutcome,sendStatus:historyStatus,search:historySearch,fromUtc:historyFrom?new Date(historyFrom+'T00:00:00').toISOString():'',toUtc:historyTo?new Date(historyTo+'T23:59:59.999').toISOString():'',page})}
+  function queueHistoryRefresh(){
+    if(tab!=='history')return
+    if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer)
+    historyRefreshTimer=window.setTimeout(()=>{historyRefreshTimer=undefined;void refreshHistoryFromEvent()},100)
+  }
+  async function refreshHistoryFromEvent(){
+    if(tab!=='history')return
+    if(refreshingHistory){historyRefreshQueued=true;return}
+    refreshingHistory=true
+    try {
+      do {
+        historyRefreshQueued=false
+        await loadHistory(historyPage)
+      } while(historyRefreshQueued&&tab==='history')
+    } catch(e:any) {
+      error=e?.message||String(e)
+    } finally {
+      refreshingHistory=false
+    }
+  }
   async function openHistory(a:Activation){selectedHistory=a;attempts=await call('Attempts',a.id)}
   function requestClearHistory(){confirmation={title:'Clear completed history?',message:'Completed activation records for this profile will be deleted. Active records will be preserved.',confirmLabel:'Clear history',success:'History cleared',action:async()=>{await call('ClearHistory',selectedProfileId,true);await loadHistory(1)}}}
   async function confirmAction(){const pending=confirmation;if(!pending)return;await run(async()=>{await pending.action();confirmation=null},pending.success)}
@@ -72,7 +95,7 @@
   async function exportProfile(){await run(async()=>{await call('ExportProfileFile',selectedProfileId)},'Profile exported')}
   async function importProfile(){await run(async()=>{await call('ImportProfileFile');await reload()},'Profile imported')}
 
-  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}}),on('activation:changed',(a)=>{pending=pending.filter(x=>x.id!==a.id);if(a.mode==='manual'&&a.activationState==='active')pending=[...pending,a]}),on('storage:error',(v)=>error='SQLite: '+v)];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().catch((e:any)=>{error=e?.message||String(e);loading=false});return()=>{window.clearInterval(liveTimer);offs.forEach(f=>f())}})
+  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{pending=pending.filter(x=>x.id!==a.id);if(a.mode==='manual'&&a.activationState==='active')pending=[...pending,a];queueHistoryRefresh()}),on('storage:error',(v)=>error='SQLite: '+v)];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().catch((e:any)=>{error=e?.message||String(e);loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);offs.forEach(f=>f())}})
 </script>
 
 <svelte:head><title>Camunda Stub Worker</title></svelte:head>

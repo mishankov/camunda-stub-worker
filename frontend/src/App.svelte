@@ -14,6 +14,7 @@
 
   let tab:'types'|'pending'|'history'|'settings' = 'types'
   let loading = true, busy = false, notice = '', error = ''
+  let noticeTimer:number|undefined, errorTimer:number|undefined
   let profiles:Profile[] = [], selectedProfileId = '', jobTypes:JobType[] = [], scenarios:Scenario[] = [], runtime:RuntimeState[] = [], pending:Activation[] = []
   let connection:any = { state:'offline', message:'Connection not checked', selectedVersion:'8.5' }
   let dataPath = ''
@@ -38,7 +39,11 @@
   const fmtDate = (v:string) => v ? new Date(v).toLocaleString('en-US') : '—'
   const parseDraft = (a:Activation):Draft => { try { return JSON.parse(a.draftJson) } catch { return {outcome:'success',variablesJson:'{}',errorCode:'',errorMessage:'',remainingRetries:0,retryBackoffMs:0} } }
 
-  async function run(fn:()=>Promise<any>, success='') { error=''; busy=true; try { await fn(); if(success) notice=success } catch(e:any) { error=e?.message || String(e) } finally { busy=false } }
+  const notificationDurationMs = 5000
+  function showNotice(message:string) { notice=message; if(noticeTimer)window.clearTimeout(noticeTimer);noticeTimer=message?window.setTimeout(()=>{notice='';noticeTimer=undefined},notificationDurationMs):undefined }
+  function showError(message:string) { error=message; if(errorTimer)window.clearTimeout(errorTimer);errorTimer=message?window.setTimeout(()=>{error='';errorTimer=undefined},notificationDurationMs):undefined }
+
+  async function run(fn:()=>Promise<any>, success='') { showError(''); busy=true; try { await fn(); if(success) showNotice(success) } catch(e:any) { showError(e?.message || String(e)) } finally { busy=false } }
   async function reload() { const b = await call<any>('Bootstrap'); profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false }
   async function refreshLiveState() { if(refreshingLiveState)return;refreshingLiveState=true;try{const b=await call<any>('Bootstrap');runtime=b.runtime||[];connection=b.connection;pending=b.pending||[];for(const a of pending)if(!drafts[a.id]){drafts[a.id]=parseDraft(a);try{draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||''}catch{draftScenarios[a.id]=''}}}catch{}finally{refreshingLiveState=false} }
   async function selectProfile() { await run(async()=>{ await call('SelectProfile',selectedProfileId); await reload() }) }
@@ -95,7 +100,7 @@
   async function exportProfile(){await run(async()=>{await call('ExportProfileFile',selectedProfileId)},'Profile exported')}
   async function importProfile(){await run(async()=>{await call('ImportProfileFile');await reload()},'Profile imported')}
 
-  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{pending=pending.filter(x=>x.id!==a.id);if(a.mode==='manual'&&a.activationState==='active')pending=[...pending,a];queueHistoryRefresh()}),on('storage:error',(v)=>error='SQLite: '+v)];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().catch((e:any)=>{error=e?.message||String(e);loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);offs.forEach(f=>f())}})
+  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{pending=pending.filter(x=>x.id!==a.id);if(a.mode==='manual'&&a.activationState==='active')pending=[...pending,a];queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(noticeTimer)window.clearTimeout(noticeTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
 </script>
 
 <svelte:head><title>Camunda Stub Worker</title></svelte:head>
@@ -120,8 +125,10 @@
       <button class="ghost" on:click={checkConnection} disabled={busy}>Check connection</button>
     </header>
 
-    {#if error}<div class="toast error"><span>{error}</span><button aria-label="Dismiss error" on:click={()=>error=''}><X size={16}/></button></div>{/if}
-    {#if notice}<div class="toast success"><span>{notice}</span><button aria-label="Dismiss notification" on:click={()=>notice=''}><X size={16}/></button></div>{/if}
+    {#if error || notice}<div class="toast-region" aria-live="polite">
+      {#if error}<div class="toast error" role="alert"><span>{error}</span><button aria-label="Dismiss error" on:click={()=>showError('')}><X size={16}/></button></div>{/if}
+      {#if notice}<div class="toast success"><span>{notice}</span><button aria-label="Dismiss notification" on:click={()=>showNotice('')}><X size={16}/></button></div>{/if}
+    </div>{/if}
 
     {#if tab==='types'}
       <section class="workspace">

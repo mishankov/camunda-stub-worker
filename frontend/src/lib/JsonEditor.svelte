@@ -10,6 +10,7 @@
 
   export let value = ''
   export let ariaLabel = 'JSON editor'
+  export let compact = false
 
   let host: HTMLDivElement
   let view: EditorView | null = null
@@ -36,7 +37,7 @@
       outline: '1px solid #669e98'
     },
     '.cm-scroller': {
-      minHeight: '210px',
+      minHeight: compact ? '150px' : '210px',
       maxHeight: '320px',
       overflow: 'auto',
       fontFamily: 'SFMono-Regular, SF Mono, Menlo, Consolas, monospace',

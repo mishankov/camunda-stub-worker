@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { Boxes, Cable, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Ellipsis, History, Plus, Play, Square, Waypoints, X } from '@lucide/svelte'
+  import { Boxes, Cable, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Ellipsis, History, Plus, Play, Square, Waypoints, X } from '@lucide/svelte'
   import { call, on } from './lib/api'
   import JsonEditor from './lib/JsonEditor.svelte'
 
@@ -11,6 +11,7 @@
   type Activation = { id:string; jobTypeConfigId:string; jobKey:string; jobType:string; mode:'manual'|'auto'; processInstanceKey:string; bpmnProcessId:string; elementId:string; retries:number; inputJson:string; customHeadersJson:string; scenarioSnapshotJson:string; draftJson:string; sendStatus:string; activationState:string; activationStateReason:string; receivedAt:string }
   type Draft = { outcome:'success'|'business_error'|'technical_failure'; variablesJson:string; errorCode:string; errorMessage:string; remainingRetries:number; retryBackoffMs:number }
   type Confirmation = { title:string; message:string; target?:string; confirmLabel:string; success:string; action:()=>Promise<void> }
+  type UpdateInfo = { currentVersion:string; latestVersion:string; updateAvailable:boolean; releaseUrl:string }
 
   let tab:'types'|'pending'|'history'|'settings' = 'types'
   let loading = true, busy = false, notice = '', error = ''
@@ -23,6 +24,7 @@
   let refreshingHistory = false
   let historyRefreshQueued = false
   let currentProfile:Profile|undefined
+  let updateInfo:UpdateInfo|null = null, checkingForUpdates = false
   let editingType:JobType|null = null, editingScenario:Scenario|null = null, editingProfile:Profile|null = null
   let confirmation:Confirmation|null = null
   let drafts:Record<string,Draft> = {}
@@ -117,8 +119,21 @@
   async function openDataDirectory(){await run(async()=>{await call('OpenDataDirectory')})}
   async function exportProfile(){await run(async()=>{await call('ExportProfileFile',selectedProfileId)},'Profile exported')}
   async function importProfile(){await run(async()=>{await call('ImportProfileFile');await reload()},'Profile imported')}
+  async function checkForUpdates(manual=false){
+    if(checkingForUpdates)return
+    checkingForUpdates=true
+    try {
+      updateInfo=await call<UpdateInfo>('CheckForUpdates')
+      if(manual&&!updateInfo.updateAvailable)showNotice(`Camunda Stub Worker ${updateInfo.currentVersion} is up to date`)
+    } catch(e:any) {
+      if(manual)showError(e?.message||String(e))
+    } finally {
+      checkingForUpdates=false
+    }
+  }
+  async function openReleasesPage(){await call('OpenReleasesPage')}
 
-  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(noticeTimer)window.clearTimeout(noticeTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
+  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().then(()=>checkForUpdates()).catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(noticeTimer)window.clearTimeout(noticeTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
 </script>
 
 <svelte:head><title>Camunda Stub Worker</title></svelte:head>
@@ -142,6 +157,8 @@
       <div class="connection"><span class:ok={connection.state==='connected'} class:warn={connection.state==='version_mismatch'}></span><div><strong>{connection.state==='connected'?'Connected':connection.state==='version_mismatch'?'Versions differ':'Not connected'}</strong><small>{connection.detectedVersion ? `Server ${connection.detectedVersion} · selected ${connection.selectedVersion}` : `${profiles.find(p=>p.id===selectedProfileId)?.host}:${profiles.find(p=>p.id===selectedProfileId)?.port}`}</small></div></div>
       <button class="ghost" on:click={checkConnection} disabled={busy}>Check connection</button>
     </header>
+
+    {#if updateInfo?.updateAvailable}<div class="update-banner" role="status"><Download size={18}/><div><strong>Camunda Stub Worker {updateInfo.latestVersion} is available</strong><small>You are using {updateInfo.currentVersion}. Download the new release when convenient.</small></div><button class="secondary" on:click={openReleasesPage}>View release</button><button class="icon-btn" aria-label="Dismiss update notification" on:click={()=>updateInfo=null}><X size={17}/></button></div>{/if}
 
     {#if error || notice}<div class="toast-region" aria-live="polite">
       {#if error}<div class="toast error" role="alert"><span>{error}</span><button aria-label="Dismiss error" on:click={()=>showError('')}><X size={16}/></button></div>{/if}
@@ -179,7 +196,7 @@
       </section>
     {:else}
       <section class="workspace"><div class="command-bar"><strong>{profiles.length} {profiles.length===1?'profile':'profiles'}</strong><button class="secondary with-icon" on:click={newProfile}><Plus size={14}/> New profile</button></div>
-      <div class="settings-grid"><article><h2>Current profile</h2>{#if currentProfile}<dl><dt>Address</dt><dd><code>{currentProfile.host}:{currentProfile.port}</code></dd><dt>API version</dt><dd>{currentProfile.selectedVersion} {#if !currentProfile.compatibilityVerified}<span class="warn-text">Compatibility not verified</span>{/if}</dd><dt>Command timeout</dt><dd>{currentProfile.commandTimeoutMs} ms</dd><dt>Activation timeout</dt><dd>{currentProfile.activationTimeoutMs} ms</dd><dt>Renewal</dt><dd>every {currentProfile.renewalIntervalMs} ms</dd><dt>Global limit</dt><dd>{currentProfile.maxActiveJobs}</dd><dt>History</dt><dd>{currentProfile.historyRetentionDays} days</dd></dl><button class="primary" on:click={editCurrentProfile}>Edit profile</button>{/if}</article><article><h2>Local data</h2><p>SQLite is stored in the standard user data directory. History is not included in exports.</p><code class="path">{dataPath}</code><div class="stack"><button class="ghost" on:click={openDataDirectory} disabled={busy}>Open directory</button><button class="ghost" on:click={exportProfile}>Export JSON</button><button class="ghost" on:click={importProfile}>Import JSON</button></div></article></div>
+      <div class="settings-grid"><article><h2>Current profile</h2>{#if currentProfile}<dl><dt>Address</dt><dd><code>{currentProfile.host}:{currentProfile.port}</code></dd><dt>API version</dt><dd>{currentProfile.selectedVersion} {#if !currentProfile.compatibilityVerified}<span class="warn-text">Compatibility not verified</span>{/if}</dd><dt>Command timeout</dt><dd>{currentProfile.commandTimeoutMs} ms</dd><dt>Activation timeout</dt><dd>{currentProfile.activationTimeoutMs} ms</dd><dt>Renewal</dt><dd>every {currentProfile.renewalIntervalMs} ms</dd><dt>Global limit</dt><dd>{currentProfile.maxActiveJobs}</dd><dt>History</dt><dd>{currentProfile.historyRetentionDays} days</dd></dl><button class="primary" on:click={editCurrentProfile}>Edit profile</button>{/if}</article><article><h2>Local data</h2><p>SQLite is stored in the standard user data directory. History is not included in exports.</p><code class="path">{dataPath}</code><div class="stack"><button class="ghost" on:click={openDataDirectory} disabled={busy}>Open directory</button><button class="ghost" on:click={exportProfile}>Export JSON</button><button class="ghost" on:click={importProfile}>Import JSON</button></div><div class="update-check"><h2>Application updates</h2><p>{#if updateInfo}Version {updateInfo.currentVersion} is {updateInfo.updateAvailable?'out of date':'up to date'}.{:else}The app checks GitHub Releases when it starts.{/if}</p><button class="ghost" on:click={()=>checkForUpdates(true)} disabled={checkingForUpdates}>{checkingForUpdates?'Checking…':'Check for updates'}</button></div></article></div>
       </section>
     {/if}
   </main>

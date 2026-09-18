@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -17,7 +18,12 @@ import (
 	"github.com/mishankov/camunda-stub-worker/internal/domain"
 	workerruntime "github.com/mishankov/camunda-stub-worker/internal/runtime"
 	"github.com/mishankov/camunda-stub-worker/internal/store"
+	"github.com/mishankov/camunda-stub-worker/internal/updatechecker"
 )
+
+var version = "1.0.0"
+
+const releasesURL = "https://github.com/mishankov/camunda-stub-worker/releases/latest"
 
 type App struct {
 	ctx           context.Context
@@ -95,6 +101,14 @@ func (a *App) Bootstrap() (domain.Bootstrap, error) {
 }
 func (a *App) CheckConnection() (domain.ConnectionStatus, error) {
 	return a.manager.ConnectCheck(context.Background())
+}
+func (a *App) CheckForUpdates() (updatechecker.Info, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	return (updatechecker.Client{HTTPClient: &http.Client{Timeout: 8 * time.Second}}).Check(ctx, version)
+}
+func (a *App) OpenReleasesPage() {
+	wailsruntime.BrowserOpenURL(a.ctx, releasesURL)
 }
 func (a *App) StartType(id string) error { return a.manager.StartType(context.Background(), id) }
 func (a *App) StopType(id string)        { a.manager.StopType(id) }

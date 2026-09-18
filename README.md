@@ -16,6 +16,7 @@ A desktop stub worker for testing Camunda 8 processes locally. It activates Zeeb
 - JSON profile import and export with regenerated UUIDs and no history.
 - Single-instance locking, SQLite WAL and foreign keys, and completed-history cleanup.
 - English Svelte UI that keeps configuration and history available offline.
+- Non-blocking update checks against published GitHub Releases, with an in-app download notification.
 - CodeMirror-powered JSON editing with syntax highlighting and validation.
 
 Zeebe keys are presented in the UI as decimal strings. JSON variables are stored and transmitted as their original text, so integers larger than `2^53` never pass through JavaScript `Number` or Go `float64`.
@@ -114,7 +115,7 @@ Deploy models and start instances using an external tool such as Camunda Modeler
 - Zeebe does not issue an ownership token for a specific activation, so exactly-once handling is not guaranteed.
 - If a command may have been transmitted before `DEADLINE_EXCEEDED`, a connection break, or shutdown, its result is marked `unknown` and cannot be retried from that history entry.
 - A successful topology check proves reachability, not support for every operation. `UNIMPLEMENTED` for the required `UpdateJobTimeout` operation stops new activations.
-- OAuth, TLS, SaaS, multitenancy, conditional scenarios, scripts, Operate API, BPMN deploy/start, and automatic updates are outside the MVP scope.
+- OAuth, TLS, SaaS, multitenancy, conditional scenarios, scripts, Operate API, BPMN deploy/start, and unattended installation of updates are outside the MVP scope.
 
 ## Verification
 

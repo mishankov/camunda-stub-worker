@@ -1,50 +1,121 @@
 # Camunda Stub Worker
 
-A desktop stub worker for testing Camunda 8 processes locally. It activates Zeebe jobs, persists each activation in SQLite, and responds with a selected scenario either automatically or after manual review.
+Camunda Stub Worker is a desktop app for testing Camunda 8 processes without building every external worker first. Connect it to a local Zeebe instance, define the job types from your BPMN model, and choose how each job should respond.
 
-## Features
+Use it to explore happy paths, business errors, and technical failures while developing or demonstrating a process. No code is required to create or switch responses.
 
-- Multiple local Camunda profiles with explicit `host:port`, plaintext gRPC, and no authentication.
-- Topology checks with selected and detected server versions.
-- Case-sensitive job types, automatic and manual modes, and named success, business-error, and technical-failure scenarios.
-- Long polling, global and per-type limits, and capacity reservation before `ActivateJobs`.
-- Immutable scenario snapshots for every activation, persisted before a command is sent.
-- `UpdateJobTimeout` while jobs wait for manual input or an automatic delay.
-- Conservative handling of ambiguous sends: a network break or deadline after possible transmission becomes `unknown` and is not retried automatically.
-- Searchable, filterable, paginated history with send attempts.
-- Crash recovery (`active` → `interrupted`, `sending` → `unknown`).
-- JSON profile import and export with regenerated UUIDs and no history.
-- Single-instance locking, SQLite WAL and foreign keys, and completed-history cleanup.
-- English Svelte UI that keeps configuration and history available offline.
-- Non-blocking update checks against published GitHub Releases, with an in-app download notification.
-- CodeMirror-powered JSON editing with syntax highlighting and validation.
+[Download the latest release](https://github.com/mishankov/camunda-stub-worker/releases/latest)
 
-Zeebe keys are presented in the UI as decimal strings. JSON variables are stored and transmitted as their original text, so integers larger than `2^53` never pass through JavaScript `Number` or Go `float64`.
+![Job types and their configured response scenarios](docs/images/job-types.jpg)
 
-## Getting started
+## What you can do
 
-1. Start a local Zeebe instance, or run `docker compose -f integration/docker-compose.yml up -d`.
-2. Start the application. On first launch it creates a **Local Camunda** profile for `localhost:26500` and Camunda `8.5`.
-3. Click **Check connection**.
-4. Add a job type that exactly matches the BPMN `zeebe:taskDefinition type`.
-5. Create a scenario. In automatic mode, select it as the active scenario.
-6. Start the job type or all configured job types. Deploy BPMN models and start process instances with an external tool.
+- **Stub multiple job types** from one desktop app.
+- **Create reusable responses** for success, BPMN business errors, and technical failures.
+- **Run automatically** with a selected response and optional delay.
+- **Review jobs manually** before editing and sending a response.
+- **Inspect input variables and custom headers** for activated jobs.
+- **Search response history** by job key, process instance, job type, outcome, status, or date.
+- **Switch between local Camunda profiles** and import or export their configuration as JSON.
+- **Keep working offline** with local configuration and history stored in SQLite.
 
-In manual mode, activated jobs appear under **Awaiting response**. You can select any scenario for that job type, edit its local copy, and send it. Scenario delay is not applied in manual mode.
+Camunda Stub Worker preserves JSON as text end to end. Large integers such as Zeebe keys do not pass through JavaScript `Number` or Go `float64`, so values larger than `2^53` remain intact.
 
-For a technical failure, `remainingRetries` is the absolute retry count sent to Zeebe. Reusing the same positive value may cause repeated activations.
+## How it works
 
-## Application data
+1. Add the exact job type used by a service task in your BPMN model.
+2. Define one or more response scenarios for that job type.
+3. Choose **Automatic** mode to respond with the active scenario, or **Manual** mode to review each job first.
+4. Start the worker and run your process from Camunda Modeler, `zbctl`, or another client.
+5. Review what happened in **History**, including every send attempt.
 
-The SQLite database and instance lock are stored in the standard user configuration directory:
+### Automatic mode
+
+Automatic mode sends the active scenario as soon as a job is activated, after any delay configured on the scenario. It is useful for repeatable end-to-end flows, demos, and tests where the same response should be returned every time.
+
+### Manual mode
+
+Manual mode places activated jobs under **Awaiting response**. You can inspect the input, select a scenario, edit its local copy, and send the response when ready. The scenario's automatic delay is not applied in manual mode.
+
+![Reviewing and preparing a response for a manually activated job](docs/images/manual-response.jpg)
+
+### Response scenarios
+
+| Outcome | What Camunda Stub Worker sends | Typical use |
+| --- | --- | --- |
+| Success | Completes the job with JSON variables | Happy paths and alternate results |
+| Business error | Throws a BPMN error with a code, message, and optional variables | Boundary error flows and expected business outcomes |
+| Technical failure | Fails the job with a message, absolute remaining retry count, and retry backoff | Incidents, retries, and unavailable dependencies |
+
+For a technical failure, `remainingRetries` is the absolute retry count sent to Zeebe. Reusing the same positive value may cause the job to be activated repeatedly.
+
+## Install
+
+Download the build for your operating system from the [latest GitHub release](https://github.com/mishankov/camunda-stub-worker/releases/latest). Release builds do not require Go or Node.js.
+
+| Platform | Release package | Requirements |
+| --- | --- | --- |
+| Windows 10/11 x64 | ZIP archive | WebView2 Runtime |
+| macOS 10.13+ x64 | DMG | Intel Mac |
+| macOS 11+ arm64 | DMG | Apple silicon Mac |
+| Linux x64 | `.tar.gz` archive | GTK3 and WebKit2GTK 4.1 |
+
+Current artifacts are not publisher-signed or notarized. On macOS, open the DMG, drag **Camunda Stub Worker** to **Applications**, and remove the quarantine attribute before the first launch:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
+```
+
+## Quick start
+
+1. Start a local Zeebe instance. You can use an existing installation or the bundled integration environment:
+
+   ```bash
+   docker compose -f integration/docker-compose.yml up -d
+   ```
+
+2. Open Camunda Stub Worker. On first launch it creates a **Local Camunda** profile for `localhost:26500` and Camunda `8.5`.
+3. Select **Check connection**.
+4. Add a job type that exactly matches the BPMN `zeebe:taskDefinition type`. Job types are case-sensitive.
+5. Add at least one response scenario.
+6. For an automatic worker, select its active scenario.
+7. Start the job type, then deploy your BPMN model and start a process instance with an external tool.
+
+The app activates and responds to jobs; it does not deploy BPMN models or start process instances.
+
+## Compatibility and scope
+
+The verified server target is **Zeebe 8.5.25**. Selecting **Other 8.x** uses the 8.5 API mode and does not imply verified compatibility.
+
+Camunda Stub Worker connects using plaintext gRPC with an explicit `host:port`. OAuth, TLS, Camunda SaaS, and multitenancy are not supported in the current MVP. Conditional scenarios, scripts, the Operate API, BPMN deployment and process start, and unattended update installation are also outside its scope.
+
+Other workers registered for the same job type compete for jobs, so exclusive activation is not guaranteed. Zeebe does not provide an ownership token for a specific activation, which means exactly-once handling cannot be guaranteed.
+
+A topology check confirms that the server is reachable; it does not prove support for every operation. If the required `UpdateJobTimeout` operation returns `UNIMPLEMENTED`, the app stops new activations.
+
+## Local data and privacy
+
+Configuration and history stay on your computer in a SQLite database. The app does not store authentication credentials or other secrets. Exported profiles contain profiles, job types, and scenarios, but exclude history and runtime state.
+
+Imported profiles receive new IDs, so they do not overwrite an existing profile.
+
+The exact database path appears under **Connections**. The default directory is:
 
 - macOS: `~/Library/Application Support/Camunda Stub Worker/`
 - Windows: `%AppData%\Camunda Stub Worker\`
 - Linux: `$XDG_CONFIG_HOME/Camunda Stub Worker/` or `~/.config/Camunda Stub Worker/`
 
-The exact path is shown under **Connections**. The MVP does not store authentication credentials or other secrets. Profile exports contain profiles, job types, and scenarios; they exclude history and runtime state.
+## Reliability behavior
 
-## Versions and system requirements
+The worker reserves capacity before requesting jobs and enforces both global and per-job-type activation limits. While a job waits for manual input or an automatic delay, the app renews its timeout with `UpdateJobTimeout`.
+
+Each activation and an immutable snapshot of its selected scenario are persisted before a response command is sent. If a network break, deadline, or shutdown happens after a command may have been transmitted, the result is marked **unknown** and is not retried automatically. On restart, active jobs become **interrupted** and in-progress sends become **unknown**.
+
+The database uses SQLite WAL mode and foreign keys. Completed history is cleaned up according to the configured retention period, and a single-instance lock prevents two copies from using the same database at once.
+
+## Development
+
+### Stack
 
 Dependencies are pinned in `go.mod` and `frontend/package-lock.json`:
 
@@ -54,21 +125,11 @@ Dependencies are pinned in `go.mod` and `frontend/package-lock.json`:
 - Camunda Go client / Zeebe protocol **8.5.25**
 - `modernc.org/sqlite` **1.39.1** (pure Go; no system SQLite dependency)
 
-The verified server target is **Zeebe 8.5.25**. **Other 8.x** uses the 8.5 API mode and does not imply verified compatibility.
+The UI uses CodeMirror for JSON editing, syntax highlighting, and validation. Update checks run in the background against published GitHub Releases and display an in-app download notification when a newer version is available.
 
-Wails 2.15 system requirements:
+### Run locally
 
-- Windows 10/11 x64 with WebView2 Runtime.
-- macOS 10.13+ x64 or macOS 11+ arm64. Development requires Xcode Command Line Tools.
-- Linux x64 with GTK3 and WebKit2GTK. Distributions using `libwebkit2gtk-4.1` require the `webkit2_41` build tag.
-
-Release builds do not require Go or Node.js. Current artifacts are not publisher-signed or notarized; local macOS builds use Wails ad-hoc signing. macOS releases are distributed as DMG images: open the image and drag **Camunda Stub Worker** onto the **Applications** shortcut. Before the first launch, remove the quarantine attribute:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
-```
-
-## Development
+Development requires the platform dependencies listed in the [Wails installation guide](https://wails.io/docs/gettingstarted/installation/), plus Go and Node.js.
 
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
@@ -76,14 +137,14 @@ cd frontend && npm ci && cd ..
 wails dev
 ```
 
-Checks:
+### Checks
 
 ```bash
 go test -race ./...
 cd frontend && npm run check && npm run build
 ```
 
-Production builds:
+### Production builds
 
 ```bash
 # macOS (the wrapper links the framework required by file dialogs)
@@ -96,35 +157,29 @@ wails build -clean -platform windows/amd64 -webview2 download
 wails build -clean -platform linux/amd64 -tags webkit2_41
 ```
 
-The macOS `Camunda Stub Worker.app` is written to `build/bin`. Release builds package it in a DMG with a custom volume icon and a fixed drag-to-Applications layout. A Windows installer can be built with `-nsis` when NSIS is installed. `.github/workflows/build.yml` builds on native runners for each operating system.
+The macOS application is written to `build/bin`. Release builds package it in a DMG with a custom volume icon and a drag-to-Applications layout. A Windows installer can be built with `-nsis` when NSIS is installed. The build workflow runs each platform build on a native CI runner.
 
 ## Integration environment
+
+Start the bundled Zeebe 8.5.25 environment:
 
 ```bash
 docker compose -f integration/docker-compose.yml up -d
 docker compose -f integration/docker-compose.yml logs -f zeebe
 ```
 
-Models in `integration/bpmn/`:
+The sample models in `integration/bpmn/` cover each response type:
 
-- `success.bpmn` — job type `stub-success`.
-- `business-error.bpmn` — job type `stub-business-error`, boundary error code `BUSINESS_ERROR`.
-- `technical-failure.bpmn` — job type `stub-technical-failure` with three initial retries.
+- `success.bpmn` — job type `stub-success`
+- `business-error.bpmn` — job type `stub-business-error`, boundary error code `BUSINESS_ERROR`
+- `technical-failure.bpmn` — job type `stub-technical-failure` with three initial retries
 
-Deploy models and start instances using an external tool such as Camunda Modeler or `zbctl`.
-
-## Semantics and limitations
-
-- Other workers for the same job type compete for jobs; exclusivity is not guaranteed.
-- Zeebe does not issue an ownership token for a specific activation, so exactly-once handling is not guaranteed.
-- If a command may have been transmitted before `DEADLINE_EXCEEDED`, a connection break, or shutdown, its result is marked `unknown` and cannot be retried from that history entry.
-- A successful topology check proves reachability, not support for every operation. `UNIMPLEMENTED` for the required `UpdateJobTimeout` operation stops new activations.
-- OAuth, TLS, SaaS, multitenancy, conditional scenarios, scripts, Operate API, BPMN deploy/start, and unattended installation of updates are outside the MVP scope.
+Deploy the models and start instances with Camunda Modeler, `zbctl`, or another external tool.
 
 ## Verification
 
 - `go test -race ./...` passes on macOS arm64.
 - `npm run check` and the production frontend build pass.
 - A Wails 2.15.0 macOS arm64 `.app` builds and receives an ad-hoc signature.
-- `go test -tags integration -run TestZeebe825Smoke -v ./integration` passes against Zeebe 8.5.25, covering the three bundled models, a success result containing `9007199254740993`, business error, `FailJob`, and `UpdateJobTimeout`.
+- `go test -tags integration -run TestZeebe825Smoke -v ./integration` passes against Zeebe 8.5.25. It covers all three bundled models, a success result containing `9007199254740993`, a business error, `FailJob`, and `UpdateJobTimeout`.
 - Windows x64, macOS x64, and Linux x64 builds are delegated to native CI runners and have not been executed locally in this environment.

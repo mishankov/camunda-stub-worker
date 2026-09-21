@@ -115,6 +115,20 @@ The database uses SQLite WAL mode and foreign keys. Completed history is cleaned
 
 ## Development
 
+### Promo site
+
+The standalone promo site lives in `site/`. It uses plain HTML and CSS and does not require the desktop app or a build step.
+
+Preview it locally from the repository root:
+
+```bash
+python3 -m http.server 4173 --directory site
+```
+
+Open <http://localhost:4173>. The screenshot in `site/assets/` is a copy of the documentation image; refresh it when the app screenshot changes.
+
+For deployment, select **GitHub Actions** in the repository's **Settings → Pages → Build and deployment → Source**. After these changes are pushed to `main`, `.github/workflows/pages.yml` publishes only `site/` to GitHub Pages when site files change. The workflow can also be run manually on `main`. The expected project URL is <https://mishankov.github.io/camunda-stub-worker/>. All local asset URLs are relative so the site works under the repository path.
+
 ### Stack
 
 Dependencies are pinned in `go.mod` and `frontend/package-lock.json`:

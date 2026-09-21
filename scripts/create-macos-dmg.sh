@@ -37,9 +37,28 @@ staging_dir="$work_dir/staging"
 read_write_dmg="$work_dir/read-write.dmg"
 device=""
 
+detach_image() {
+  local attempt
+
+  for attempt in 1 2 3 4 5; do
+    if hdiutil detach "$device"; then
+      device=""
+      return 0
+    fi
+
+    if [[ $attempt -lt 5 ]]; then
+      echo "DMG is still busy; retrying detach ($attempt/5)..." >&2
+      sleep $((attempt * 2))
+    fi
+  done
+
+  echo "Failed to detach $device after 5 attempts." >&2
+  return 1
+}
+
 cleanup() {
   if [[ -n "$device" ]]; then
-    hdiutil detach -quiet "$device" || true
+    hdiutil detach -force "$device" || true
   fi
   rm -rf "$work_dir"
 }
@@ -59,6 +78,7 @@ attach_output=$(hdiutil attach -readwrite -noverify -noautoopen "$read_write_dmg
 device=$(printf '%s\n' "$attach_output" | awk '/^\/dev\// {print $1; exit}')
 mount_point=$(printf '%s\n' "$attach_output" | tail -n 1 | awk -F '\t' '{print $NF}')
 
+echo "Configuring Finder layout..."
 osascript - "$volume_name" "$app_name" <<'APPLESCRIPT'
 on run argv
   set volumeName to item 1 of argv
@@ -98,11 +118,18 @@ if [[ $(GetFileInfo -a "$mount_point") != *C* ]]; then
   exit 1
 fi
 
-bless --folder "$mount_point"
-sync
-hdiutil detach -quiet "$device"
-device=""
+echo "Configuring the volume to open in Finder..."
+if [[ $(uname -m) == arm64 ]]; then
+  bless --folder "$mount_point"
+else
+  bless --folder "$mount_point" --openfolder "$mount_point"
+fi
 
+sync
+echo "Detaching writable image..."
+detach_image
+
+echo "Compressing final image..."
 hdiutil convert -quiet \
   "$read_write_dmg" \
   -format UDZO \

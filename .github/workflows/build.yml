@@ -51,6 +51,12 @@ jobs:
         run: wails build -clean -platform ${{ matrix.platform }} -tags webkit2_41
       - if: runner.os == 'Windows'
         run: wails build -clean -platform ${{ matrix.platform }} -webview2 download
+      - name: Package macOS build
+        if: runner.os == 'macOS'
+        run: |
+          ./scripts/create-macos-dmg.sh \
+            "build/bin/Camunda Stub Worker.app" \
+            "build/bin/Camunda Stub Worker-${{ matrix.artifact }}.dmg"
       - uses: actions/upload-artifact@v7
         with:
           name: Camunda Stub Worker-${{ matrix.artifact }}

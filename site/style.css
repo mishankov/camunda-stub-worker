@@ -1,0 +1,41 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  color: #d8dcde;
+  background: #121416;
+  --muted: #969da2;
+  --rule: #3a3f44;
+  --signal: #67b8b0;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: #9dcac5; text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 4px; }
+a:focus-visible { outline: 2px solid var(--signal); outline-offset: 5px; }
+.wrap { width: min(1040px, calc(100% - 48px)); margin-inline: auto; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-block: 24px; border-bottom: 1px solid var(--rule); font-size: 14px; }
+.brand { color: #d8dcde; font-weight: 600; }
+.intro { max-width: 660px; padding-block: 64px 32px; }
+h1 { margin: 0 0 22px; font-size: clamp(36px, 5vw, 54px); line-height: 1.12; letter-spacing: -1.5px; font-weight: 600; }
+.intro > p { color: var(--muted); font-size: 18px; line-height: 1.65; margin: 0 0 26px; max-width: 590px; }
+.actions { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; font-size: 14px; }
+.button { display: inline-block; padding: 12px 18px; color: #d8dcde; background: #303438; border: 1px solid #4a5054; border-radius: 3px; font-weight: 600; }
+.button:hover { background: #3a3f43; border-color: #596066; text-decoration: none; }
+.intro .platforms { font-size: 14px; margin: 18px 0 0; }
+.screenshot { display: block; width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 4px; }
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; padding-block: 32px; }
+.features p { margin: 0; font-size: 16px; line-height: 1.65; color: var(--muted); }
+.features strong { display: block; color: #d8dcde; font-weight: 600; margin-bottom: 6px; }
+.compatibility { color: var(--muted); font-size: 14px; line-height: 1.65; margin: 0 0 32px; }
+.compatibility a { text-decoration: underline; text-underline-offset: 3px; }
+footer { padding-block: 22px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--muted); }
+
+@media (max-width: 640px) {
+  .wrap { width: calc(100% - 36px); }
+  header { font-size: 13px; }
+  .intro { padding-top: 44px; }
+  .intro > p { font-size: 16px; }
+  .features { grid-template-columns: 1fr; gap: 22px; }
+}

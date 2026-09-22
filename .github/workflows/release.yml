@@ -63,6 +63,20 @@ jobs:
               gh release create "${create_args[@]}"
               publish_after_upload=true
             fi
+
+            # Draft releases can exist before their Git tag is created.
+            # Ensure checkout can resolve the tag before starting downstream jobs.
+            remote_tag=$(git ls-remote --refs origin "refs/tags/$tag")
+            if [[ -z "$remote_tag" ]]; then
+              if [[ "$publish_after_upload" != "true" ]]; then
+                echo "Published release $tag is missing its Git tag. Refusing to recreate it."
+                exit 1
+              fi
+              target=$(gh release view "$tag" --json targetCommitish --jq '.targetCommitish')
+              target_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$target" --jq '.sha')
+              gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+                -f "ref=refs/tags/$tag" -f "sha=$target_sha"
+            fi
           fi
 
           safe_tag=$(printf '%s' "$tag" | sed 's/[^A-Za-z0-9._-]/-/g')

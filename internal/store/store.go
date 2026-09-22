@@ -147,6 +147,52 @@ func (s *Store) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=3`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err = tx.ExecContext(ctx, `ALTER TABLE connection_profiles ADD COLUMN operate_url TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migration 3: %w", err)
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO schema_migrations(version, applied_at) VALUES(3, datetime('now'))`); err != nil {
+			return err
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+	}
+
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=4`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for _, stmt := range []string{
+			`ALTER TABLE connection_profiles ADD COLUMN operate_auth_mode TEXT NOT NULL DEFAULT 'none'`,
+			`ALTER TABLE connection_profiles ADD COLUMN operate_username TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE connection_profiles ADD COLUMN operate_password TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE connection_profiles ADD COLUMN operate_token TEXT NOT NULL DEFAULT ''`,
+			`UPDATE connection_profiles SET operate_url='http://localhost:8081', operate_auth_mode='password', operate_username='demo', operate_password='demo' WHERE name='Local Camunda' AND host='localhost' AND port=26500 AND operate_url=''`,
+			`INSERT INTO schema_migrations(version,applied_at) VALUES(4,datetime('now'))`,
+		} {
+			if _, err = tx.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("migration 4: %w", err)
+			}
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -168,7 +214,7 @@ func (s *Store) ensureDefaultProfile(ctx context.Context) error {
 		return nil
 	}
 	now := domain.UTCNow()
-	p := domain.Profile{ID: uuid.NewString(), Name: "Local Camunda", Host: "localhost", Port: 26500, SelectedVersion: "8.5", CompatibilityVerified: true, CommandTimeoutMS: 10000, ActivationTimeoutMS: 120000, RenewalIntervalMS: 30000, MaxActiveJobs: 10, HistoryRetentionDays: 30, CreatedAt: now, UpdatedAt: now}
+	p := domain.Profile{ID: uuid.NewString(), Name: "Local Camunda", OperateURL: "http://localhost:8081", OperateAuthMode: "password", OperateUsername: "demo", OperatePassword: "demo", Host: "localhost", Port: 26500, SelectedVersion: "8.5", CompatibilityVerified: true, CommandTimeoutMS: 10000, ActivationTimeoutMS: 120000, RenewalIntervalMS: 30000, MaxActiveJobs: 10, HistoryRetentionDays: 30, CreatedAt: now, UpdatedAt: now}
 	if err := s.SaveProfile(ctx, p); err != nil {
 		return err
 	}
@@ -177,7 +223,7 @@ func (s *Store) ensureDefaultProfile(ctx context.Context) error {
 }
 
 func (s *Store) Profiles(ctx context.Context) ([]domain.Profile, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,host,port,selected_version,compatibility_verified,command_timeout_ms,activation_timeout_ms,renewal_interval_ms,max_active_jobs,history_retention_days,created_at,updated_at FROM connection_profiles ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,host,port,selected_version,compatibility_verified,command_timeout_ms,activation_timeout_ms,renewal_interval_ms,max_active_jobs,history_retention_days,created_at,updated_at,operate_url,operate_auth_mode,operate_username,operate_password,operate_token FROM connection_profiles ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +231,7 @@ func (s *Store) Profiles(ctx context.Context) ([]domain.Profile, error) {
 	var out []domain.Profile
 	for rows.Next() {
 		var p domain.Profile
-		if err = rows.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.SelectedVersion, &p.CompatibilityVerified, &p.CommandTimeoutMS, &p.ActivationTimeoutMS, &p.RenewalIntervalMS, &p.MaxActiveJobs, &p.HistoryRetentionDays, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err = rows.Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.SelectedVersion, &p.CompatibilityVerified, &p.CommandTimeoutMS, &p.ActivationTimeoutMS, &p.RenewalIntervalMS, &p.MaxActiveJobs, &p.HistoryRetentionDays, &p.CreatedAt, &p.UpdatedAt, &p.OperateURL, &p.OperateAuthMode, &p.OperateUsername, &p.OperatePassword, &p.OperateToken); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -195,7 +241,7 @@ func (s *Store) Profiles(ctx context.Context) ([]domain.Profile, error) {
 
 func (s *Store) Profile(ctx context.Context, id string) (domain.Profile, error) {
 	var p domain.Profile
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,host,port,selected_version,compatibility_verified,command_timeout_ms,activation_timeout_ms,renewal_interval_ms,max_active_jobs,history_retention_days,created_at,updated_at FROM connection_profiles WHERE id=?`, id).Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.SelectedVersion, &p.CompatibilityVerified, &p.CommandTimeoutMS, &p.ActivationTimeoutMS, &p.RenewalIntervalMS, &p.MaxActiveJobs, &p.HistoryRetentionDays, &p.CreatedAt, &p.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id,name,host,port,selected_version,compatibility_verified,command_timeout_ms,activation_timeout_ms,renewal_interval_ms,max_active_jobs,history_retention_days,created_at,updated_at,operate_url,operate_auth_mode,operate_username,operate_password,operate_token FROM connection_profiles WHERE id=?`, id).Scan(&p.ID, &p.Name, &p.Host, &p.Port, &p.SelectedVersion, &p.CompatibilityVerified, &p.CommandTimeoutMS, &p.ActivationTimeoutMS, &p.RenewalIntervalMS, &p.MaxActiveJobs, &p.HistoryRetentionDays, &p.CreatedAt, &p.UpdatedAt, &p.OperateURL, &p.OperateAuthMode, &p.OperateUsername, &p.OperatePassword, &p.OperateToken)
 	return p, err
 }
 
@@ -210,6 +256,17 @@ func (s *Store) SetSelectedProfileID(ctx context.Context, id string) error {
 }
 
 func (s *Store) SaveProfile(ctx context.Context, p domain.Profile) error {
+	if p.OperateAuthMode == "" || p.OperateAuthMode == "none" {
+		p = p.WithoutOperateCredentials()
+	}
+	if p.OperateAuthMode == "password" {
+		p.OperateToken = ""
+	}
+	if p.OperateAuthMode == "token" {
+		p.OperateUsername = ""
+		p.OperatePassword = ""
+	}
+
 	if err := domain.ValidateProfile(p); err != nil {
 		return err
 	}
@@ -222,7 +279,7 @@ func (s *Store) SaveProfile(ctx context.Context, p domain.Profile) error {
 	}
 	p.UpdatedAt = now
 	p.CompatibilityVerified = p.SelectedVersion == "8.5"
-	_, err := s.db.ExecContext(ctx, `INSERT INTO connection_profiles(id,name,host,port,selected_version,compatibility_verified,command_timeout_ms,activation_timeout_ms,renewal_interval_ms,max_active_jobs,history_retention_days,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,host=excluded.host,port=excluded.port,selected_version=excluded.selected_version,compatibility_verified=excluded.compatibility_verified,command_timeout_ms=excluded.command_timeout_ms,activation_timeout_ms=excluded.activation_timeout_ms,renewal_interval_ms=excluded.renewal_interval_ms,max_active_jobs=excluded.max_active_jobs,history_retention_days=excluded.history_retention_days,updated_at=excluded.updated_at`, p.ID, p.Name, p.Host, p.Port, p.SelectedVersion, p.CompatibilityVerified, p.CommandTimeoutMS, p.ActivationTimeoutMS, p.RenewalIntervalMS, p.MaxActiveJobs, p.HistoryRetentionDays, p.CreatedAt, p.UpdatedAt)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO connection_profiles(id,name,host,port,selected_version,compatibility_verified,command_timeout_ms,activation_timeout_ms,renewal_interval_ms,max_active_jobs,history_retention_days,created_at,updated_at,operate_url,operate_auth_mode,operate_username,operate_password,operate_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,host=excluded.host,port=excluded.port,selected_version=excluded.selected_version,compatibility_verified=excluded.compatibility_verified,command_timeout_ms=excluded.command_timeout_ms,activation_timeout_ms=excluded.activation_timeout_ms,renewal_interval_ms=excluded.renewal_interval_ms,max_active_jobs=excluded.max_active_jobs,history_retention_days=excluded.history_retention_days,updated_at=excluded.updated_at,operate_url=excluded.operate_url,operate_auth_mode=excluded.operate_auth_mode,operate_username=excluded.operate_username,operate_password=excluded.operate_password,operate_token=excluded.operate_token`, p.ID, p.Name, p.Host, p.Port, p.SelectedVersion, p.CompatibilityVerified, p.CommandTimeoutMS, p.ActivationTimeoutMS, p.RenewalIntervalMS, p.MaxActiveJobs, p.HistoryRetentionDays, p.CreatedAt, p.UpdatedAt, p.OperateURL, p.OperateAuthMode, p.OperateUsername, p.OperatePassword, p.OperateToken)
 	return friendlyConstraint(err)
 }
 
@@ -598,7 +655,7 @@ func (s *Store) ImportProfile(ctx context.Context, p domain.Profile, types []dom
 	p.CreatedAt = now
 	p.UpdatedAt = now
 	p.CompatibilityVerified = p.SelectedVersion == "8.5"
-	_, err = tx.ExecContext(ctx, `INSERT INTO connection_profiles(id,name,host,port,selected_version,compatibility_verified,command_timeout_ms,activation_timeout_ms,renewal_interval_ms,max_active_jobs,history_retention_days,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.Name, p.Host, p.Port, p.SelectedVersion, p.CompatibilityVerified, p.CommandTimeoutMS, p.ActivationTimeoutMS, p.RenewalIntervalMS, p.MaxActiveJobs, p.HistoryRetentionDays, p.CreatedAt, p.UpdatedAt)
+	_, err = tx.ExecContext(ctx, `INSERT INTO connection_profiles(id,name,host,port,selected_version,compatibility_verified,command_timeout_ms,activation_timeout_ms,renewal_interval_ms,max_active_jobs,history_retention_days,created_at,updated_at,operate_url,operate_auth_mode,operate_username,operate_password,operate_token) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.Name, p.Host, p.Port, p.SelectedVersion, p.CompatibilityVerified, p.CommandTimeoutMS, p.ActivationTimeoutMS, p.RenewalIntervalMS, p.MaxActiveJobs, p.HistoryRetentionDays, p.CreatedAt, p.UpdatedAt, p.OperateURL, p.OperateAuthMode, p.OperateUsername, p.OperatePassword, p.OperateToken)
 	if err != nil {
 		return p, err
 	}

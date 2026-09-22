@@ -19,7 +19,7 @@ type Document struct {
 }
 
 func Encode(p domain.Profile, types []domain.JobTypeConfig, scenarios []domain.Scenario) ([]byte, error) {
-	d := Document{SchemaVersion: SchemaVersion, Profile: p, JobTypes: types, Scenarios: scenarios}
+	d := Document{SchemaVersion: SchemaVersion, Profile: p.WithoutOperateCredentials(), JobTypes: types, Scenarios: scenarios}
 	return json.MarshalIndent(d, "", "  ")
 }
 func Decode(raw []byte) (Document, error) {

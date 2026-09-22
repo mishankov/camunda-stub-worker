@@ -20,17 +20,18 @@ import (
 type NotifyFunc func(string, any)
 
 type Manager struct {
-	store      *store.Store
-	factory    gateway.Factory
-	notify     NotifyFunc
-	mu         sync.Mutex
-	profile    domain.Profile
-	gw         gateway.CamundaGateway
-	connection domain.ConnectionStatus
-	types      map[string]*typeWorker
-	active     map[string]*liveActivation
-	reserved   int
-	closed     bool
+	store           *store.Store
+	factory         gateway.Factory
+	notify          NotifyFunc
+	mu              sync.Mutex
+	profile         domain.Profile
+	gw              gateway.CamundaGateway
+	connection      domain.ConnectionStatus
+	types           map[string]*typeWorker
+	active          map[string]*liveActivation
+	reserved        int
+	closed          bool
+	startingProcess bool
 }
 
 type typeWorker struct {
@@ -124,6 +125,9 @@ func (m *Manager) SetProfile(ctx context.Context, p domain.Profile) error {
 }
 func (m *Manager) HasWork() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.hasWorkLocked() }
 func (m *Manager) hasWorkLocked() bool {
+	if m.startingProcess {
+		return true
+	}
 	if len(m.active) > 0 || m.reserved > 0 {
 		return true
 	}
@@ -379,7 +383,7 @@ func (m *Manager) releaseReserved(n int) {
 func (m *Manager) accept(cfg domain.JobTypeConfig, p domain.Profile, j domain.ActivatedJob) error {
 	received := domain.UTCNow()
 	a := domain.Activation{ID: uuid.NewString(), ProfileID: p.ID, JobTypeConfigID: cfg.ID, JobKey: j.Key, JobType: j.Type, ProcessInstanceKey: j.ProcessInstanceKey, ProcessDefinitionKey: j.ProcessDefinitionKey, BPMNProcessID: j.BPMNProcessID, ElementID: j.ElementID, ElementInstanceKey: j.ElementInstanceKey, Retries: j.Retries, CustomHeadersJSON: normalizeObject(j.CustomHeadersJSON), InputJSON: normalizeObject(j.VariablesJSON), Mode: cfg.Mode, ActivationState: domain.ActivationActive, SendStatus: domain.SendNotPrepared, ReceivedAt: received, ConfirmedDeadlineAt: time.Now().UTC().Add(time.Duration(p.ActivationTimeoutMS) * time.Millisecond).Format(time.RFC3339Nano)}
-	profileRaw, _ := json.Marshal(p)
+	profileRaw, _ := json.Marshal(p.WithoutOperateCredentials())
 	a.ProfileSnapshotJSON = string(profileRaw)
 	var draft domain.ResponseDraft
 	if cfg.ActiveScenarioID != nil {

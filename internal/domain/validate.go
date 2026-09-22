@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -12,6 +13,9 @@ import (
 func ValidateJSONObject(raw string) error {
 	if strings.TrimSpace(raw) == "" {
 		return errors.New("JSON cannot be empty")
+	}
+	if !json.Valid([]byte(raw)) {
+		return errors.New("invalid JSON: enter one complete JSON object")
 	}
 	dec := json.NewDecoder(bytes.NewBufferString(raw))
 	dec.UseNumber()
@@ -32,7 +36,36 @@ func ValidateJSONObject(raw string) error {
 	return nil
 }
 
+func ValidateOperateURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || raw != strings.TrimSpace(raw) || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("Operate URL must be an HTTP or HTTPS base URL without credentials, query, or fragment")
+	}
+	return nil
+}
+
 func ValidateProfile(p Profile) error {
+	switch p.OperateAuthMode {
+	case "", "none":
+	case "password":
+		if p.OperateUsername == "" || p.OperatePassword == "" {
+			return errors.New("Operate username and password are required")
+		}
+	case "token":
+		if strings.TrimSpace(p.OperateToken) == "" {
+			return errors.New("Operate bearer token is required")
+		}
+	default:
+		return errors.New("unknown Operate authentication method")
+	}
+
+	if err := ValidateOperateURL(p.OperateURL); err != nil {
+		return err
+	}
+
 	if strings.TrimSpace(p.Name) == "" {
 		return errors.New("profile name is required")
 	}

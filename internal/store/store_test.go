@@ -118,3 +118,129 @@ func TestImportIsIndependent(t *testing.T) {
 		t.Fatal("active scenario was not remapped")
 	}
 }
+
+func TestOperateURLMigrationAndPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// Recreate the previous schema to exercise an actual upgrade.
+	if _, err = s.db.ExecContext(ctx, `ALTER TABLE connection_profiles DROP COLUMN operate_url`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version=3`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := s.Profiles(ctx)
+	if err != nil || profiles[0].OperateURL != "" {
+		t.Fatalf("profiles=%v err=%v", profiles, err)
+	}
+	p := profiles[0]
+	p.OperateURL = "https://operate.example.test/operate"
+	if err = s.SaveProfile(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	imported, err := s.ImportProfile(ctx, p, nil, nil)
+	if err != nil || imported.OperateURL != p.OperateURL {
+		t.Fatalf("import=%v err=%v", imported, err)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	saved, err := s.Profile(ctx, p.ID)
+	if err != nil || saved.OperateURL != p.OperateURL {
+		t.Fatalf("saved=%v err=%v", saved, err)
+	}
+}
+
+func TestOperateCredentialsDefaultsMigrationAndRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	profiles, err := s.Profiles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := profiles[0]
+	if p.OperateURL != "http://localhost:8081" || p.OperateAuthMode != "password" || p.OperateUsername != "demo" || p.OperatePassword != "demo" {
+		t.Fatal("missing local Operate defaults")
+	}
+	custom := p
+	custom.ID = "custom"
+	custom.Name = "Custom connection"
+	custom.OperateURL = "https://operate.example.test"
+	if err = s.SaveProfile(ctx, custom); err != nil {
+		t.Fatal(err)
+	}
+	// Upgrade a v3 database with an unconfigured local profile and a custom URL.
+	for _, query := range []string{
+		`UPDATE connection_profiles SET operate_url='' WHERE name='Local Camunda'`,
+		`ALTER TABLE connection_profiles DROP COLUMN operate_auth_mode`,
+		`ALTER TABLE connection_profiles DROP COLUMN operate_username`,
+		`ALTER TABLE connection_profiles DROP COLUMN operate_password`,
+		`ALTER TABLE connection_profiles DROP COLUMN operate_token`,
+		`DELETE FROM schema_migrations WHERE version=4`,
+	} {
+		if _, err = s.db.ExecContext(ctx, query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err = s.Profile(ctx, p.ID)
+	if err != nil || p.OperatePassword != "demo" || p.OperateURL != "http://localhost:8081" {
+		t.Fatal("default migration failed")
+	}
+	custom, err = s.Profile(ctx, custom.ID)
+	if err != nil || custom.OperateURL != "https://operate.example.test" || custom.OperateAuthMode != "none" {
+		t.Fatal("customized connection changed")
+	}
+	p.OperateUsername = "alice"
+	p.OperatePassword = "test-password"
+	if err = s.SaveProfile(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p, err = s.Profile(ctx, p.ID)
+	if err != nil || p.OperateUsername != "alice" || p.OperatePassword != "test-password" {
+		t.Fatal("credentials did not survive restart")
+	}
+	p.OperateAuthMode = "token"
+	p.OperateToken = "test-token"
+	if err = s.SaveProfile(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	p, err = s.Profile(ctx, p.ID)
+	if err != nil || p.OperateToken != "test-token" || p.OperateUsername != "" || p.OperatePassword != "" {
+		t.Fatal("token mode did not clear password")
+	}
+	p.OperateAuthMode = "none"
+	if err = s.SaveProfile(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	p, err = s.Profile(ctx, p.ID)
+	if err != nil || p.OperateToken != "" {
+		t.Fatal("none mode did not clear credentials")
+	}
+}

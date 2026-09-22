@@ -21,6 +21,7 @@ type Topology struct {
 }
 
 type CamundaGateway interface {
+	StartProcess(context.Context, domain.StartProcessRequest) (domain.ProcessInstance, error)
 	Topology(context.Context) (Topology, error)
 	Activate(context.Context, string, int32, time.Duration) ([]domain.ActivatedJob, error)
 	Complete(context.Context, string, string) error
@@ -44,6 +45,29 @@ func (ZeebeFactory) Connect(p domain.Profile) (CamundaGateway, error) {
 }
 
 type ZeebeGateway struct{ client zbc.Client }
+
+func (g *ZeebeGateway) StartProcess(ctx context.Context, request domain.StartProcessRequest) (domain.ProcessInstance, error) {
+	if err := domain.ValidateStartProcess(request); err != nil {
+		return domain.ProcessInstance{}, err
+	}
+	version := request.Version
+	if version == 0 {
+		version = -1
+	}
+	cmd, err := g.client.NewCreateInstanceCommand().BPMNProcessId(request.BPMNProcessID).Version(version).VariablesFromString(request.VariablesJSON)
+	if err != nil {
+		return domain.ProcessInstance{}, err
+	}
+	r, err := cmd.Send(ctx)
+	if err != nil {
+		return domain.ProcessInstance{}, err
+	}
+	return domain.ProcessInstance{
+		BPMNProcessID: r.BpmnProcessId, Version: r.Version,
+		ProcessDefinitionKey: strconv.FormatInt(r.ProcessDefinitionKey, 10),
+		ProcessInstanceKey:   strconv.FormatInt(r.ProcessInstanceKey, 10),
+	}, nil
+}
 
 func (g *ZeebeGateway) Close() error { return g.client.Close() }
 func (g *ZeebeGateway) Topology(ctx context.Context) (Topology, error) {

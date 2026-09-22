@@ -10,6 +10,7 @@ Use it to explore happy paths, business errors, and technical failures while dev
 
 ## What you can do
 
+- **Start deployed processes** with a BPMN process ID, optional version, and JSON variables.
 - **Stub multiple job types** from one desktop app.
 - **Create reusable responses** for success, BPMN business errors, and technical failures.
 - **Run automatically** with a selected response and optional delay.
@@ -26,7 +27,7 @@ Camunda Stub Worker preserves JSON as text end to end. Large integers such as Ze
 1. Add the exact job type used by a service task in your BPMN model.
 2. Define one or more response scenarios for that job type.
 3. Choose **Automatic** mode to respond with the active scenario, or **Manual** mode to review each job first.
-4. Start the worker and run your process from Camunda Modeler, `zbctl`, or another client.
+4. Start the worker, then use **Start process** to create a process instance.
 5. Review what happened in **History**, including every send attempt.
 
 ### Automatic mode
@@ -79,15 +80,17 @@ xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
 4. Add a job type that exactly matches the BPMN `zeebe:taskDefinition type`. Job types are case-sensitive.
 5. Add at least one response scenario.
 6. For an automatic worker, select its active scenario.
-7. Start the job type, then deploy your BPMN model and start a process instance with an external tool.
+7. Deploy your BPMN model with Camunda Modeler or `zbctl`, start the job type, then open **Start process**. Enter its BPMN process ID and JSON variables, leave version blank for the latest deployment, and select **Start process**.
 
-The app activates and responds to jobs; it does not deploy BPMN models or start process instances.
+To choose a deployed process from a dropdown, edit the connection profile and set its **Operate URL** (for example, `http://localhost:8081`, with or without `/v1`). The Start process screen loads default-tenant process definitions from Operate, combines deployed versions by BPMN process ID, and offers **Refresh processes** and manual entry. Operate must point to the same cluster as the Zeebe connection; recent deployments may take a moment to appear. In **Connections → Edit profile → Operate authentication**, choose **Username and password** for built-in Operate login, **Bearer token** for token-based access, or **None** for an unauthenticated endpoint, then save the profile and refresh processes. Username/password login uses `/api/login` and session cookies; Identity/SSO deployments may still require a bearer token. Authentication is saved per connection in the local SQLite database, including passwords and bearer tokens in plaintext, and restored after restart. Exports omit authentication credentials. New local connections default to `http://localhost:8081` with username `demo` and password `demo`; adjust these to match your installation. Canceling profile edits leaves the active authentication unchanged. Session cookies are used only for the current refresh. The bundled Zeebe-only Docker environment does not include Operate.
+
+The app shows the confirmed process instance key and definition key. It returns once the instance is created, without waiting for the process to finish. On an uncertain result (such as a timeout), check Camunda before trying again: an instance may already exist. Process starts are not retried automatically or saved in response History; History records jobs handled by the workers. BPMN deployment still requires an external tool.
 
 ## Compatibility and scope
 
 The verified server target is **Zeebe 8.5.25**. Selecting **Other 8.x** uses the 8.5 API mode and does not imply verified compatibility.
 
-Camunda Stub Worker connects using plaintext gRPC with an explicit `host:port`. OAuth, TLS, Camunda SaaS, and multitenancy are not supported in the current MVP. Conditional scenarios, scripts, the Operate API, BPMN deployment and process start, and unattended update installation are also outside its scope.
+Camunda Stub Worker connects using plaintext gRPC with an explicit `host:port`. OAuth, TLS, Camunda SaaS, and multitenancy are not supported in the current MVP. Conditional scenarios, scripts, BPMN deployment, and unattended update installation are also outside its scope.
 
 Other workers registered for the same job type compete for jobs, so exclusive activation is not guaranteed. Zeebe does not provide an ownership token for a specific activation, which means exactly-once handling cannot be guaranteed.
 
@@ -95,7 +98,7 @@ A topology check confirms that the server is reachable; it does not prove suppor
 
 ## Local data and privacy
 
-Configuration and history stay on your computer in a SQLite database. The app does not store authentication credentials or other secrets. Exported profiles contain profiles, job types, and scenarios, but exclude history and runtime state.
+Configuration and history stay on your computer in a SQLite database. Operate usernames, passwords, and bearer tokens are stored in plaintext in the local SQLite database. Profile exports and activation snapshots omit these credentials. Exported profiles contain profiles, job types, and scenarios, but exclude history and runtime state.
 
 Imported profiles receive new IDs, so they do not overwrite an existing profile.
 
@@ -174,7 +177,7 @@ The sample models in `integration/bpmn/` cover each response type:
 - `business-error.bpmn` — job type `stub-business-error`, boundary error code `BUSINESS_ERROR`
 - `technical-failure.bpmn` — job type `stub-technical-failure` with three initial retries
 
-Deploy the models and start instances with Camunda Modeler, `zbctl`, or another external tool.
+Deploy the models with Camunda Modeler, `zbctl`, or another external tool. Start instances from **Start process** using `stub_success_process`, `stub_business_error_process`, or `stub_technical_failure_process`.
 
 ## Verification
 

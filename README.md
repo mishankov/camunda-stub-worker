@@ -1,6 +1,6 @@
 # Camunda Stub Worker
 
-Camunda Stub Worker is a desktop app for testing Camunda 8 processes without building every external worker first. Connect it to a local Zeebe instance, define the job types from your BPMN model, and choose how each job should respond.
+Camunda Stub Worker is a desktop app for testing Camunda 8 processes without building every external worker first. Connect to local Zeebe, start a deployed process, and choose how its jobs should respond. Connect Operate to pick deployed processes from a dropdown.
 
 Use it to explore happy paths, business errors, and technical failures while developing or demonstrating a process. No code is required to create or switch responses.
 
@@ -11,6 +11,7 @@ Use it to explore happy paths, business errors, and technical failures while dev
 ## What you can do
 
 - **Start deployed processes** with a BPMN process ID, optional version, and JSON variables.
+- **Browse deployed processes** through the Operate API, with refresh and manual ID entry.
 - **Stub multiple job types** from one desktop app.
 - **Create reusable responses** for success, BPMN business errors, and technical failures.
 - **Run automatically** with a selected response and optional delay.
@@ -18,6 +19,7 @@ Use it to explore happy paths, business errors, and technical failures while dev
 - **Inspect input variables and custom headers** for activated jobs.
 - **Search response history** by job key, process instance, job type, outcome, status, or date.
 - **Switch between local Camunda profiles** and import or export their configuration as JSON.
+- **Save Operate authentication** with each connection: username/password, bearer token, or no authentication.
 - **Keep working offline** with local configuration and history stored in SQLite.
 
 Camunda Stub Worker preserves JSON as text end to end. Large integers such as Zeebe keys do not pass through JavaScript `Number` or Go `float64`, so values larger than `2^53` remain intact.
@@ -82,15 +84,33 @@ xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
 6. For an automatic worker, select its active scenario.
 7. Deploy your BPMN model with Camunda Modeler or `zbctl`, start the job type, then open **Start process**. Enter its BPMN process ID and JSON variables, leave version blank for the latest deployment, and select **Start process**.
 
-To choose a deployed process from a dropdown, edit the connection profile and set its **Operate URL** (for example, `http://localhost:8081`, with or without `/v1`). The Start process screen loads default-tenant process definitions from Operate, combines deployed versions by BPMN process ID, and offers **Refresh processes** and manual entry. Operate must point to the same cluster as the Zeebe connection; recent deployments may take a moment to appear. In **Connections → Edit profile → Operate authentication**, choose **Username and password** for built-in Operate login, **Bearer token** for token-based access, or **None** for an unauthenticated endpoint, then save the profile and refresh processes. Username/password login uses `/api/login` and session cookies; Identity/SSO deployments may still require a bearer token. Authentication is saved per connection in the local SQLite database, including passwords and bearer tokens in plaintext, and restored after restart. Exports omit authentication credentials. New local connections default to `http://localhost:8081` with username `demo` and password `demo`; adjust these to match your installation. Canceling profile edits leaves the active authentication unchanged. Session cookies are used only for the current refresh. The bundled Zeebe-only Docker environment does not include Operate.
+### Start a process
+
+Open **Start process**, below **Awaiting response** in the sidebar. Choose a deployed process from Operate, or select **Enter ID manually**. Leave **Version** blank for the latest deployed version, or enter a specific version. Add your input variables as a JSON object and select **Start process**.
+
+![Start process with a deployed process selected, JSON variables, and returned instance keys](docs/images/start-process.jpg)
+
+Screenshots show the current app UI with illustrative sample data.
 
 The app shows the confirmed process instance key and definition key. It returns once the instance is created, without waiting for the process to finish. On an uncertain result (such as a timeout), check Camunda before trying again: an instance may already exist. Process starts are not retried automatically or saved in response History; History records jobs handled by the workers. BPMN deployment still requires an external tool.
+
+### Connect Operate
+
+1. Open **Connections → Edit profile** and set the **Operate URL**, with or without `/v1`. Operate and Zeebe must point to the same cluster.
+2. Choose **Username and password**, **Bearer token**, or **None** under **Operate authentication** and enter the corresponding credentials.
+3. Save the profile, then open **Start process**. Use **Refresh processes** to load new deployments.
+
+![Connection profile editor with Operate URL and username/password authentication](docs/images/connections.jpg)
+
+New local connections default to `http://localhost:8081` with username `demo` and password `demo`. Adjust these to match your installation. Built-in Operate login uses a session cookie; Identity/SSO deployments may require a bearer token. Authentication is saved per connection and restored after restarting the app.
+
+The picker lists default-tenant processes and combines their versions into one entry per BPMN process ID. Recently deployed models may take a moment to appear in Operate. If Operate is unavailable, manual ID entry still works. The bundled Docker environment contains only Zeebe; Operate is optional and must be provided separately.
 
 ## Compatibility and scope
 
 The verified server target is **Zeebe 8.5.25**. Selecting **Other 8.x** uses the 8.5 API mode and does not imply verified compatibility.
 
-Camunda Stub Worker connects using plaintext gRPC with an explicit `host:port`. OAuth, TLS, Camunda SaaS, and multitenancy are not supported in the current MVP. Conditional scenarios, scripts, BPMN deployment, and unattended update installation are also outside its scope.
+The Zeebe connection uses plaintext gRPC with an explicit `host:port`; Zeebe OAuth, TLS, Camunda SaaS, and multitenancy are not supported. The optional Operate connection uses the v1 REST API over HTTP or HTTPS with built-in login, bearer-token authentication, or no authentication. Conditional scenarios, scripts, BPMN deployment, and unattended update installation are outside the app's scope.
 
 Other workers registered for the same job type compete for jobs, so exclusive activation is not guaranteed. Zeebe does not provide an ownership token for a specific activation, which means exactly-once handling cannot be guaranteed.
 
@@ -128,7 +148,7 @@ Preview it locally from the repository root:
 python3 -m http.server 4173 --directory site
 ```
 
-Open <http://localhost:4173>. The screenshot in `site/assets/` is a copy of the documentation image; refresh it when the app screenshot changes.
+Open <http://localhost:4173>. Screenshots in `site/assets/` are copies of the documentation images in `docs/images/`; refresh both sets together. Use sample data and masked credentials when capturing the UI.
 
 For deployment, select **GitHub Actions** in the repository's **Settings → Pages → Build and deployment → Source**. After these changes are pushed to `main`, `.github/workflows/pages.yml` publishes only `site/` to GitHub Pages when site files change. The workflow can also be run manually on `main`. The expected project URL is <https://mishankov.github.io/camunda-stub-worker/>. All local asset URLs are relative so the site works under the repository path.
 

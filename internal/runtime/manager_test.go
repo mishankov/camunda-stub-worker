@@ -21,6 +21,7 @@ type fakeFactory struct{ g *fakeGateway }
 func (f fakeFactory) Connect(domain.Profile) (gateway.CamundaGateway, error) { return f.g, nil }
 
 type fakeGateway struct {
+	startProcess      func(context.Context, domain.StartProcessRequest) (domain.ProcessInstance, error)
 	mu                sync.Mutex
 	activateOnce      sync.Once
 	activateStarted   chan struct{}
@@ -29,6 +30,12 @@ type fakeGateway struct {
 	completeErr       error
 }
 
+func (f *fakeGateway) StartProcess(ctx context.Context, r domain.StartProcessRequest) (domain.ProcessInstance, error) {
+	if f.startProcess != nil {
+		return f.startProcess(ctx, r)
+	}
+	return domain.ProcessInstance{}, errors.New("unused")
+}
 func (f *fakeGateway) Topology(context.Context) (gateway.Topology, error) {
 	return gateway.Topology{Version: "8.5.25", Brokers: 1}, nil
 }

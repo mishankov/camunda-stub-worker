@@ -228,3 +228,12 @@ tbody tr:hover { background: #202427; }
   .workspace { padding-left: 16px; padding-right: 16px; }
   .worker-columns, .worker-main { grid-template-columns: minmax(150px, 1.1fr) 70px minmax(145px, 1fr) 54px 72px 86px; gap: 10px; }
 }
+
+.process-form { max-width: 760px; display: grid; gap: 18px; }
+.process-form h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.process-form p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.process-form label { display: grid; gap: 6px; color: #aeb3b7; font-size: 13px; }
+.process-result { padding: 16px; background: #1d2b2a; border: 1px solid #3f6561; }
+.process-result h3 { margin: 0; font-size: 15px; color: var(--success); }
+.process-result dl { display: grid; grid-template-columns: 180px 1fr; gap: 10px; font-size: 13px; }
+.process-result dd { margin: 0; overflow-wrap: anywhere; }

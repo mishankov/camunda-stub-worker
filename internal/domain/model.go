@@ -3,6 +3,11 @@ package domain
 import "time"
 
 type Profile struct {
+	OperateAuthMode       string `json:"operateAuthMode"`
+	OperateUsername       string `json:"operateUsername,omitempty"`
+	OperatePassword       string `json:"operatePassword,omitempty"`
+	OperateToken          string `json:"operateToken,omitempty"`
+	OperateURL            string `json:"operateUrl"`
 	ID                    string `json:"id"`
 	Name                  string `json:"name"`
 	Host                  string `json:"host"`
@@ -16,6 +21,12 @@ type Profile struct {
 	HistoryRetentionDays  int    `json:"historyRetentionDays"`
 	CreatedAt             string `json:"createdAt"`
 	UpdatedAt             string `json:"updatedAt"`
+}
+
+func (p Profile) WithoutOperateCredentials() Profile {
+	p.OperateAuthMode = "none"
+	p.OperateUsername, p.OperatePassword, p.OperateToken = "", "", ""
+	return p
 }
 
 func (p Profile) Address() string { return p.Host + ":" + itoa(p.Port) }

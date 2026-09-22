@@ -25,3 +25,19 @@ func TestRoundTripPreservesLargeJSONNumber(t *testing.T) {
 		t.Fatalf("precision lost: %s", doc.Scenarios[0].VariablesJSON)
 	}
 }
+
+func TestExportOmitsOperateCredentials(t *testing.T) {
+	p := domain.Profile{OperateAuthMode: "password", OperateUsername: "private-user", OperatePassword: "private-password", OperateToken: "private-token"}
+	raw, err := Encode(p, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"private-user", "private-password", "private-token", "operatePassword", "operateToken", "operateUsername"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatal("export includes credentials")
+		}
+	}
+	if p.OperatePassword != "private-password" {
+		t.Fatal("export mutated original profile")
+	}
+}

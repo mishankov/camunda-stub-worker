@@ -9,7 +9,7 @@ func TestValidateJSONObject(t *testing.T) {
 			t.Fatalf("%s: %v", v, err)
 		}
 	}
-	invalid := []string{"", `[]`, `null`, `42`, `{"broken":}`}
+	invalid := []string{"", `[]`, `null`, `42`, `{"broken":}`, `{} trailing`, `{} {}`, `{}]`}
 	for _, v := range invalid {
 		if err := ValidateJSONObject(v); err == nil {
 			t.Fatalf("expected %s to fail", v)
@@ -25,5 +25,18 @@ func TestScenarioRules(t *testing.T) {
 	s.ErrorCode = "PAYMENT_DECLINED"
 	if err := ValidateScenario(s); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestValidateOperateURL(t *testing.T) {
+	for _, raw := range []string{"", "http://localhost:8081", "https://host/operate/v1/"} {
+		if err := ValidateOperateURL(raw); err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+	}
+	for _, raw := range []string{"localhost:8081", "ftp://host", "https://user:secret@host", "https://host?token=secret", "https://host#fragment", " http://host"} {
+		if err := ValidateOperateURL(raw); err == nil {
+			t.Fatalf("accepted %s", raw)
+		}
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/mishankov/camunda-stub-worker/internal/configio"
 	"github.com/mishankov/camunda-stub-worker/internal/domain"
+	"github.com/mishankov/camunda-stub-worker/internal/operate"
 	workerruntime "github.com/mishankov/camunda-stub-worker/internal/runtime"
 	"github.com/mishankov/camunda-stub-worker/internal/store"
 	"github.com/mishankov/camunda-stub-worker/internal/updatechecker"
@@ -101,6 +102,23 @@ func (a *App) Bootstrap() (domain.Bootstrap, error) {
 }
 func (a *App) CheckConnection() (domain.ConnectionStatus, error) {
 	return a.manager.ConnectCheck(context.Background())
+}
+func (a *App) ListProcesses(profileID string) ([]operate.Process, error) {
+	p, err := a.store.Profile(context.Background(), profileID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(p.CommandTimeoutMS)*time.Millisecond)
+	defer cancel()
+	return operate.ListProcesses(ctx, p.OperateURL, operate.Auth{Mode: p.OperateAuthMode, Username: p.OperateUsername, Password: p.OperatePassword, Token: p.OperateToken})
+}
+
+func (a *App) StartProcess(request domain.StartProcessRequest) (domain.ProcessInstance, error) {
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return a.manager.StartProcess(ctx, request)
 }
 func (a *App) CheckForUpdates() (updatechecker.Info, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)

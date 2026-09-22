@@ -56,7 +56,8 @@ func TestZeebe825Smoke(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.jobType, func(t *testing.T) {
-			if _, e := client.NewCreateInstanceCommand().BPMNProcessId(tc.process).LatestVersion().Send(ctx); e != nil {
+			instance, e := g.StartProcess(ctx, domain.StartProcessRequest{BPMNProcessID: tc.process, VariablesJSON: `{"large":9007199254740993}`})
+			if e != nil {
 				t.Fatal(e)
 			}
 			jobs, e := g.Activate(ctx, tc.jobType, 1, 20*time.Second)
@@ -65,6 +66,9 @@ func TestZeebe825Smoke(t *testing.T) {
 			}
 			if len(jobs) != 1 {
 				t.Fatalf("activated %d jobs", len(jobs))
+			}
+			if jobs[0].ProcessInstanceKey != instance.ProcessInstanceKey || !strings.Contains(jobs[0].VariablesJSON, "9007199254740993") {
+				t.Fatalf("unexpected instance or variables: %+v", jobs[0])
 			}
 			if e = g.Extend(ctx, jobs[0].Key, 20*time.Second); e != nil {
 				t.Fatal(e)

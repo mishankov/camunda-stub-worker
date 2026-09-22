@@ -200,6 +200,7 @@ tbody tr:hover { background: #202427; }
 .modal-title { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 2px; }
 .modal-title h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.015em; }
 .modal input, .modal textarea, .modal select, input, textarea, select { padding: 8px 9px; color: var(--text); background: #17191b; border: 1px solid #3b4044; border-radius: 3px; outline: none; }
+.modal input, .modal select { height: 36px; }
 .modal input:focus, .modal textarea:focus, .modal select:focus, input:focus, textarea:focus, select:focus { border-color: #669e98; box-shadow: 0 0 0 1px #669e98; }
 .modal textarea { min-height: 80px; resize: vertical; }
 .modal textarea.short { min-height: 54px; }

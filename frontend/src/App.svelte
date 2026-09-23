@@ -39,6 +39,7 @@
   let draftScenarios:Record<string,string> = {}
   let history:any = { items:[], page:1, pageSize:100, total:0 }, historySearch = '', historyStatus = '', historyOutcome = '', historyType = '', historyFrom = '', historyTo = '', historyPage = 1, selectedHistory:Activation|null = null, attempts:any[] = []
   $: currentProfile = profiles.find(p=>p.id===selectedProfileId)
+  $: profileDeletionReasons = Object.fromEntries(profiles.map(profile=>[profile.id,profileDeletionReason(profile,profiles.length,selectedProfileId,runtime,pending.length)]))
   $: if (currentProfile && processSourceKey !== `${currentProfile.id}|${currentProfile.operateUrl||''}`) resetProcessSource(`${currentProfile.id}|${currentProfile.operateUrl||''}`)
   $: if (tab==='process' && currentProfile?.operateUrl && !processesLoaded && !loadingProcesses) void loadProcesses()
   $: currentViewLabel = ({types:'Job types',process:'Start process',pending:'Awaiting response',history:'History',settings:'Connections'} as const)[tab]
@@ -150,6 +151,16 @@
   function closeProfile(){editingProfile=null;editingOperateAuth=emptyOperateAuth()}
   function editCurrentProfile(){editingProfile={...profiles.find(p=>p.id===selectedProfileId)!};editingOperateAuth=authForProfile(editingProfile)}
   function newProfile(){editingOperateAuth={mode:'password',username:'demo',password:'demo',token:''};editingProfile={operateAuthMode:'password',operateUrl:'http://localhost:8081',id:'',name:'New profile',host:'localhost',port:26500,selectedVersion:'8.5',compatibilityVerified:true,commandTimeoutMs:10000,activationTimeoutMs:120000,renewalIntervalMs:30000,maxActiveJobs:10,historyRetentionDays:30}}
+  function profileDeletionReason(profile:Profile,count:number,selectedId:string,workers:RuntimeState[],pendingCount:number):string {
+    if(count<=1)return 'At least one connection profile must remain.'
+    if(profile.id===selectedId)return 'Select another profile using the Profile menu before deleting this one.'
+    if(workers.some(worker=>worker.state==='running'||worker.state==='stopping'||worker.activeJobs>0)||pendingCount)return 'Stop workers and finish active jobs before deleting a profile.'
+    return ''
+  }
+  function requestDeleteProfile(profile:Profile){
+    if(busy||startingProcess||profileDeletionReasons[profile.id])return
+    confirmation={title:'Delete connection profile?',message:'Its saved credentials, job types, and response scenarios will also be deleted. Activation history will remain in the local database, but will no longer be accessible through this profile. This cannot be undone.',target:profile.name,confirmLabel:'Delete profile',success:'Connection profile deleted',action:async()=>{await call('DeleteProfile',profile.id);await reload()}}
+  }
   async function saveProfile(){if(!editingProfile)return;await run(async()=>{const auth={...editingOperateAuth};const saved=await call<Profile>('SaveProfile',{...editingProfile,operateAuthMode:auth.mode,operateUsername:auth.username,operatePassword:auth.password,operateToken:auth.token});closeProfile();if(!selectedProfileId){selectedProfileId=saved.id;await call('SelectProfile',saved.id)};await reload();if(saved.id===selectedProfileId){processListRequest++;deployedProcesses=[];processesError='';processesLoaded=false;loadingProcesses=false;}},'Profile saved')}
   async function openDataDirectory(){await run(async()=>{await call('OpenDataDirectory')})}
   async function exportProfile(){await run(async()=>{await call('ExportProfileFile',selectedProfileId)},'Profile exported')}
@@ -255,6 +266,14 @@
       </section>
     {:else}
       <section class="workspace"><div class="command-bar"><strong>{profiles.length} {profiles.length===1?'profile':'profiles'}</strong><button class="secondary with-icon" on:click={newProfile}><Plus size={14}/> New profile</button></div>
+      <div class="saved-profiles" aria-label="Saved connection profiles">
+        {#each profiles as profile (profile.id)}
+          <div class="saved-profile">
+            <div><strong>{profile.name}{profile.id===selectedProfileId?' (current)':''}</strong><code>{profile.host}:{profile.port}</code>{#if profileDeletionReasons[profile.id]}<small>{profileDeletionReasons[profile.id]}</small>{/if}</div>
+            <button class="danger-text" aria-label={`Delete connection profile ${profile.name}`} disabled={busy||startingProcess||!!profileDeletionReasons[profile.id]} on:click={()=>requestDeleteProfile(profile)}>Delete</button>
+          </div>
+        {/each}
+      </div>
       <div class="settings-grid"><article><h2>Current profile</h2>{#if currentProfile}<dl><dt>Address</dt><dd><code>{currentProfile.host}:{currentProfile.port}</code></dd><dt>Operate URL</dt><dd>{currentProfile.operateUrl||'Not configured'}</dd><dt>Operate authentication</dt><dd>{({none:'None',password:'Username and password',token:'Bearer token'} as const)[currentProfile.operateAuthMode||'none']}</dd><dt>API version</dt><dd>{currentProfile.selectedVersion} {#if !currentProfile.compatibilityVerified}<span class="warn-text">Compatibility not verified</span>{/if}</dd><dt>Command timeout</dt><dd>{currentProfile.commandTimeoutMs} ms</dd><dt>Activation timeout</dt><dd>{currentProfile.activationTimeoutMs} ms</dd><dt>Renewal</dt><dd>every {currentProfile.renewalIntervalMs} ms</dd><dt>Global limit</dt><dd>{currentProfile.maxActiveJobs}</dd><dt>History</dt><dd>{currentProfile.historyRetentionDays} days</dd></dl><button class="primary" on:click={editCurrentProfile}>Edit profile</button>{/if}</article><article><h2>Local data</h2><p>SQLite is stored in the standard user data directory. History is not included in exports.</p><code class="path">{dataPath}</code><div class="stack"><button class="ghost" on:click={openDataDirectory} disabled={busy}>Open directory</button><button class="ghost" on:click={exportProfile}>Export JSON</button><button class="ghost" on:click={importProfile}>Import JSON</button></div><div class="update-check"><h2>Application updates</h2><p>{#if updateInfo}Version {updateInfo.currentVersion} is {updateInfo.updateAvailable?'out of date':'up to date'}.{:else}The app checks GitHub Releases when it starts.{/if}</p><button class="ghost" on:click={()=>checkForUpdates(true)} disabled={checkingForUpdates}>{checkingForUpdates?'Checking…':'Check for updates'}</button></div></article></div>
       </section>
     {/if}

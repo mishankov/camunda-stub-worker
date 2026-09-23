@@ -104,6 +104,8 @@ The app shows the confirmed process instance key and definition key. It returns 
 
 New local connections default to `http://localhost:8081` with username `demo` and password `demo`. Adjust these to match your installation. Built-in Operate login uses a session cookie; Identity/SSO deployments may require a bearer token. Authentication is saved per connection and restored after restarting the app.
 
+To remove a saved connection, open **Connections** and select **Delete** beside its profile, then confirm. Select another profile in the top **Profile** menu first, and stop workers and finish active jobs. At least one profile must remain. Deletion also removes the profile’s saved credentials, job types, and response scenarios. Activation history remains in the local database but is no longer accessible through the deleted profile.
+
 The picker lists default-tenant processes and combines their versions into one entry per BPMN process ID. Recently deployed models may take a moment to appear in Operate. If Operate is unavailable, manual ID entry still works. The bundled Docker environment contains only Zeebe; Operate is optional and must be provided separately.
 
 ## Compatibility and scope

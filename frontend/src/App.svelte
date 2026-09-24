@@ -277,7 +277,7 @@
       <button class:active={tab==='history'} on:click={()=>{tab='history';loadHistory(1)}}><span><History size={18}/></span> History</button>
       <button class:active={tab==='settings'} on:click={()=>tab='settings'}><span><Cable size={18}/></span> Connections</button>
     </nav>
-    <div class="sidebar-note"><i></i><div><strong>{connection.state==='connected'?'Camunda available':'No connection'}</strong><small>{connection.message}</small></div></div>
+    <div class="sidebar-note"><i class:ok={connection.state==='connected'} class:warn={connection.state==='version_mismatch'}></i><div><strong>{connection.state==='connected'?'Camunda available':connection.state==='version_mismatch'?'Versions differ':'No connection'}</strong><small>{connection.message}</small></div></div>
   </aside>
   <main>
     <header>

@@ -25,7 +25,8 @@
     dialog.addEventListener('pointerdown', pointerDown)
     dialog.addEventListener('click', click)
     dialog.showModal()
-    dialog.querySelector<HTMLElement>('[data-modal-initial-focus]')?.focus({ preventScroll: true })
+    const initialFocus = dialog.querySelector<HTMLElement>('[data-modal-initial-focus]') || dialog.querySelector<HTMLElement>('input:not([type=hidden]), textarea, [contenteditable=true]')
+    initialFocus?.focus({ preventScroll: true })
     return () => {
       dialog.removeEventListener('cancel', cancel)
       dialog.removeEventListener('pointerdown', pointerDown)

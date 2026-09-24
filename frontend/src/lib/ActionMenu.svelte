@@ -43,5 +43,5 @@
   .action-menu-items { position: absolute; right: 0; top: calc(100% + 6px); z-index: 2; min-width: 180px; padding: 5px; border: 1px solid var(--rule); border-radius: 4px; background: #262a2e; box-shadow: 0 8px 24px #0006; }
   .action-menu-items :global(button) { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 3px; background: transparent; color: var(--text); text-align: left; font-size: 13px; }
   .action-menu-items :global(button:hover:not(:disabled)) { background: #343a3e; }
-  .action-menu-items :global(button.danger-text) { color: var(--danger); border-top: 1px solid var(--rule); border-radius: 0; margin-top: 4px; }
+  .action-menu-items :global(button.danger-text) { color: var(--danger); }
 </style>

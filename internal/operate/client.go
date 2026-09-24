@@ -16,10 +16,16 @@ import (
 	"github.com/mishankov/camunda-stub-worker/internal/domain"
 )
 
+type ProcessVersion struct {
+	Version int32  `json:"version"`
+	Key     string `json:"key"`
+}
+
 type Process struct {
-	BPMNProcessID string `json:"bpmnProcessId"`
-	Name          string `json:"name"`
-	LatestVersion int32  `json:"latestVersion"`
+	Versions      []ProcessVersion `json:"versions"`
+	BPMNProcessID string           `json:"bpmnProcessId"`
+	Name          string           `json:"name"`
+	LatestVersion int32            `json:"latestVersion"`
 }
 
 type Auth struct {
@@ -32,39 +38,11 @@ type Auth struct {
 // ListProcesses queries Operate's v1 API. Keys and pagination tokens are never
 // decoded as floating-point numbers. Only the default tenant can be started by this app.
 func ListProcesses(ctx context.Context, baseURL string, auth Auth) ([]Process, error) {
-	if baseURL == "" {
-		return nil, errors.New("set an Operate URL in Connections to load deployed processes")
-	}
-	if err := domain.ValidateOperateURL(baseURL); err != nil {
-		return nil, err
-	}
-	base := strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
-	endpoint := base
-	if !strings.HasSuffix(endpoint, "/v1") {
-		endpoint += "/v1"
-	}
-	endpoint += "/process-definitions/search"
-	jar, err := cookiejar.New(nil)
+	client, base, err := newClient(ctx, baseURL, auth)
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	switch auth.Mode {
-	case "", "none":
-	case "token":
-		if strings.TrimSpace(auth.Token) == "" {
-			return nil, errors.New("enter an Operate bearer token")
-		}
-	case "password":
-		if auth.Username == "" || auth.Password == "" {
-			return nil, errors.New("enter an Operate username and password")
-		}
-		if err := login(ctx, client, base, auth); err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errors.New("unknown Operate authentication method")
-	}
+	endpoint := base + "/v1/process-definitions/search"
 	processes := map[string]Process{}
 	var cursor json.RawMessage
 	seen := map[string]bool{}
@@ -105,10 +83,11 @@ func ListProcesses(ctx context.Context, baseURL string, auth Auth) ([]Process, e
 		}
 		var page struct {
 			Items []struct {
-				BPMNProcessID string `json:"bpmnProcessId"`
-				Name          string `json:"name"`
-				Version       int32  `json:"version"`
-				TenantID      string `json:"tenantId"`
+				Key           json.Number `json:"key"`
+				BPMNProcessID string      `json:"bpmnProcessId"`
+				Name          string      `json:"name"`
+				Version       int32       `json:"version"`
+				TenantID      string      `json:"tenantId"`
 			} `json:"items"`
 			Total      *int            `json:"total"`
 			SortValues json.RawMessage `json:"sortValues"`
@@ -125,8 +104,12 @@ func ListProcesses(ctx context.Context, baseURL string, auth Auth) ([]Process, e
 			}
 			existing := processes[item.BPMNProcessID]
 			if item.Version > existing.LatestVersion {
-				processes[item.BPMNProcessID] = Process{item.BPMNProcessID, item.Name, item.Version}
+				existing.BPMNProcessID = item.BPMNProcessID
+				existing.Name = item.Name
+				existing.LatestVersion = item.Version
 			}
+			existing.Versions = append(existing.Versions, ProcessVersion{Version: item.Version, Key: item.Key.String()})
+			processes[item.BPMNProcessID] = existing
 		}
 		count += len(page.Items)
 		if count >= *page.Total {
@@ -144,6 +127,7 @@ func ListProcesses(ctx context.Context, baseURL string, auth Auth) ([]Process, e
 	}
 	result := make([]Process, 0, len(processes))
 	for _, p := range processes {
+		sort.Slice(p.Versions, func(i, j int) bool { return p.Versions[i].Version > p.Versions[j].Version })
 		result = append(result, p)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].BPMNProcessID < result[j].BPMNProcessID })
@@ -176,4 +160,37 @@ func login(ctx context.Context, client *http.Client, base string, auth Auth) err
 		return errors.New("Operate did not establish a login session; check credentials and whether this deployment uses Identity/SSO, which requires bearer-token authentication")
 	}
 	return nil
+}
+
+func newClient(ctx context.Context, baseURL string, auth Auth) (*http.Client, string, error) {
+	if baseURL == "" {
+		return nil, "", errors.New("set an Operate URL in Connections to load deployed processes")
+	}
+	if err := domain.ValidateOperateURL(baseURL); err != nil {
+		return nil, "", err
+	}
+	base := strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, "", err
+	}
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	switch auth.Mode {
+	case "", "none":
+	case "token":
+		if strings.TrimSpace(auth.Token) == "" {
+			return nil, "", errors.New("enter an Operate bearer token")
+		}
+	case "password":
+		if auth.Username == "" || auth.Password == "" {
+			return nil, "", errors.New("enter an Operate username and password")
+		}
+		if err := login(ctx, client, base, auth); err != nil {
+			return nil, "", err
+		}
+	default:
+		return nil, "", errors.New("unknown Operate authentication method")
+	}
+
+	return client, base, nil
 }

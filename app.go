@@ -113,6 +113,16 @@ func (a *App) ListProcesses(profileID string) ([]operate.Process, error) {
 	return operate.ListProcesses(ctx, p.OperateURL, operate.Auth{Mode: p.OperateAuthMode, Username: p.OperateUsername, Password: p.OperatePassword, Token: p.OperateToken})
 }
 
+func (a *App) GetProcessTasks(profileID, key, processID string) ([]operate.Task, error) {
+	p, err := a.store.Profile(context.Background(), profileID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(p.CommandTimeoutMS)*time.Millisecond)
+	defer cancel()
+	return operate.GetProcessTasks(ctx, p.OperateURL, operate.Auth{Mode: p.OperateAuthMode, Username: p.OperateUsername, Password: p.OperatePassword, Token: p.OperateToken}, key, processID)
+}
+
 func (a *App) StartProcess(request domain.StartProcessRequest) (domain.ProcessInstance, error) {
 	ctx := a.ctx
 	if ctx == nil {

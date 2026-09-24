@@ -1,26 +1,52 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { Boxes, Cable, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Ellipsis, History, Plus, Play, Square, Waypoints, X } from '@lucide/svelte'
+  import { Boxes, Cable, Check, ChevronLeft, ChevronRight, Clock3, Download, Ellipsis, History, Pencil, Plus, Play, Square, Waypoints, X } from '@lucide/svelte'
   import { call, on } from './lib/api'
   import JsonEditor from './lib/JsonEditor.svelte'
+  import Modal from './lib/Modal.svelte'
+  import ActionMenu from './lib/ActionMenu.svelte'
 
   type Profile = { operateAuthMode:OperateAuth['mode']; operateUsername?:string; operatePassword?:string; operateToken?:string; operateUrl:string; id:string; name:string; host:string; port:number; selectedVersion:string; compatibilityVerified:boolean; commandTimeoutMs:number; activationTimeoutMs:number; renewalIntervalMs:number; maxActiveJobs:number; historyRetentionDays:number }
   type JobType = { id:string; profileId:string; jobType:string; description:string; mode:'manual'|'auto'; activeScenarioId:string|null; maxActiveJobs:number }
   type Scenario = { id:string; jobTypeConfigId:string; name:string; description:string; outcome:'success'|'business_error'|'technical_failure'; variablesJson:string; delayMs:number; errorCode:string; errorMessage:string; remainingRetries:number; retryBackoffMs:number }
   type RuntimeState = { configId:string; state:string; activeJobs:number; lastError:string }
-  type Activation = { id:string; jobTypeConfigId:string; jobKey:string; jobType:string; mode:'manual'|'auto'; processInstanceKey:string; bpmnProcessId:string; elementId:string; retries:number; inputJson:string; customHeadersJson:string; scenarioSnapshotJson:string; draftJson:string; sendStatus:string; activationState:string; activationStateReason:string; receivedAt:string }
+  type Activation = { id:string; jobTypeConfigId:string; jobKey:string; jobType:string; mode:'manual'|'auto'; processInstanceKey:string; bpmnProcessId:string; processDefinitionKey:string; elementId:string; retries:number; inputJson:string; customHeadersJson:string; scenarioSnapshotJson:string; draftJson:string; sendStatus:string; activationState:string; activationStateReason:string; receivedAt:string }
   type Draft = { outcome:'success'|'business_error'|'technical_failure'; variablesJson:string; errorCode:string; errorMessage:string; remainingRetries:number; retryBackoffMs:number }
   type Confirmation = { title:string; message:string; target?:string; confirmLabel:string; success:string; action:()=>Promise<void> }
   type UpdateInfo = { currentVersion:string; latestVersion:string; updateAvailable:boolean; releaseUrl:string }
 
-  let tab:'types'|'process'|'pending'|'history'|'settings' = 'types'
+  let tab:'types'|'process'|'pending'|'history'|'settings' = 'process'
   type ProcessInstance = { bpmnProcessId:string; version:number; processDefinitionKey:string; processInstanceKey:string }
-  type DeployedProcess = { bpmnProcessId:string; name:string; latestVersion:number }
+  type DeployedProcess = { bpmnProcessId:string; name:string; latestVersion:number; versions:{version:number;key:string}[] }
   let deployedProcesses:DeployedProcess[] = [], loadingProcesses = false, processesLoaded = false, processesError = '', manualProcessId = false, processSourceKey = '', processListRequest = 0
+  type ProcessTask = {id:string;name:string;jobType:string;dynamic:boolean}
+  let processTasks:ProcessTask[] = [], tasksLoading = false, tasksError = '', tasksSource = '', tasksRequest = 0
+  $: selectedProcess = deployedProcesses.find(p=>p.bpmnProcessId===processId)
+  $: selectedDefinition = !manualProcessId ? selectedProcess?.versions?.find(v=>v.version===(processVersion??selectedProcess.latestVersion)) : undefined
+  $: taskSource = selectedDefinition ? `${processSourceKey}|${processId}|${selectedDefinition.key}` : ''
+  $: if(taskSource!==tasksSource) void loadTasks(taskSource, selectedDefinition?.key||'', processId)
+  $: processPending = pending.filter(a=>a.bpmnProcessId===processId && (!selectedDefinition || a.processDefinitionKey===selectedDefinition.key))
+  $: processWorkers = jobTypes.filter(t=>processTasks.some(task=>!task.dynamic&&task.jobType===t.jobType))
+  async function loadTasks(source:string,key:string,id:string){
+    tasksSource=source;const request=++tasksRequest;processTasks=[];tasksError='';tasksLoading=!!source
+    if(!source)return
+    try {const result=await call<ProcessTask[]>('GetProcessTasks',selectedProfileId,key,id);if(request===tasksRequest)processTasks=result||[]}
+    catch(e:any){if(request===tasksRequest)tasksError=e?.message||String(e)}
+    finally {if(request===tasksRequest)tasksLoading=false}
+  }
+  async function addTaskResponse(task:ProcessTask){
+    await run(async()=>{
+      let type=jobTypes.find(t=>t.jobType===task.jobType)
+      if(!type){type=await call<JobType>('SaveJobType',{id:'',profileId:selectedProfileId,jobType:task.jobType,description:'',mode:'manual',activeScenarioId:null,maxActiveJobs:1});await reload()}
+      newScenario(type.id)
+    })
+  }
+  async function startProcessWorkers(){await run(async()=>{try{for(const type of processWorkers)if(rt(type.id).state!=='running')await call('StartType',type.id)}finally{await reload()}},'Process workers started')}
   type OperateAuth = { mode:'none'|'token'|'password'; token:string; username:string; password:string }
   const emptyOperateAuth = ():OperateAuth => ({mode:'none',token:'',username:'',password:''})
   let editingOperateAuth = emptyOperateAuth()
   let processId = '', processVersion:number|undefined, processVariables = '{}'
+  let showProcessStart = false
   let startingProcess = false, processError = '', processResult:ProcessInstance|null = null, processResultProfile = ''
   let loading = true, busy = false, notice = '', error = ''
   let noticeTimer:number|undefined, errorTimer:number|undefined
@@ -42,7 +68,7 @@
   $: profileDeletionReasons = Object.fromEntries(profiles.map(profile=>[profile.id,profileDeletionReason(profile,profiles.length,selectedProfileId,runtime,pending.length)]))
   $: if (currentProfile && processSourceKey !== `${currentProfile.id}|${currentProfile.operateUrl||''}`) resetProcessSource(`${currentProfile.id}|${currentProfile.operateUrl||''}`)
   $: if (tab==='process' && currentProfile?.operateUrl && !processesLoaded && !loadingProcesses) void loadProcesses()
-  $: currentViewLabel = ({types:'Job types',process:'Start process',pending:'Awaiting response',history:'History',settings:'Connections'} as const)[tab]
+  $: currentViewLabel = ({types:'Job types',process:'Processes',pending:'Awaiting response',history:'History',settings:'Connections'} as const)[tab]
 
   const outcomeLabel = (v:string) => ({success:'Success',business_error:'Business error',technical_failure:'Technical failure'} as any)[v] || v
   const sendLabel = (v:string) => ({not_prepared:'Not prepared',prepared:'Response prepared',sending:'Sending',confirmed:'Confirmed by Camunda',failed:'Send failed',unknown:'Outcome unknown'} as any)[v] || v
@@ -62,7 +88,7 @@
   async function selectProfile() { await run(async()=>{ await call('SelectProfile',selectedProfileId); await reload() }) }
   async function checkConnection() { await run(async()=>{ connection=await call('CheckConnection') },'Connection check complete') }
   function resetProcessSource(key:string){
-    processSourceKey=key;processListRequest++;deployedProcesses=[];processesLoaded=false;loadingProcesses=false;processesError='';processId='';processVersion=undefined;manualProcessId=false
+    tasksRequest++;tasksSource='';processTasks=[];tasksError='';tasksLoading=false;processResult=null;processError='';processSourceKey=key;processListRequest++;deployedProcesses=[];processesLoaded=false;loadingProcesses=false;processesError='';processId='';processVersion=undefined;manualProcessId=false
   }
   async function loadProcesses(){
     const profileId=selectedProfileId, request=++processListRequest
@@ -72,6 +98,7 @@
       if(request!==processListRequest)return
       deployedProcesses=result||[]
       if(!manualProcessId&&!deployedProcesses.some(p=>p.bpmnProcessId===processId))processId=''
+      if(processVersion&&!deployedProcesses.find(p=>p.bpmnProcessId===processId)?.versions?.some(v=>v.version===processVersion))processVersion=undefined
     } catch(e:any) {if(request===processListRequest){deployedProcesses=[];processesError=e?.message||String(e)}}
     finally {if(request===processListRequest)loadingProcesses=false}
   }
@@ -80,7 +107,7 @@
     startingProcess=true;processError='';processResult=null
     processResultProfile=currentProfile?.name||selectedProfileId
     try {
-      processResult=await call<ProcessInstance>('StartProcess',{profileId:selectedProfileId,bpmnProcessId:processId,version:processVersion??0,variablesJson:processVariables})
+      processResult=await call<ProcessInstance>('StartProcess',{profileId:selectedProfileId,bpmnProcessId:processId,version:selectedDefinition?.version??processVersion??0,variablesJson:processVariables})
     } catch(e:any) { processError=e?.message||String(e) } finally { startingProcess=false }
   }
   async function formatProcessVariables(){await run(async()=>{processVariables=await call('FormatJSON',processVariables)})}
@@ -96,7 +123,24 @@
   async function saveScenario(){if(!editingScenario)return;await run(async()=>{await call('SaveScenario',editingScenario);editingScenario=null;await reload()},'Scenario saved')}
   async function duplicateScenario(id:string){await run(async()=>{await call('DuplicateScenario',id);await reload()},'Scenario duplicated')}
   function requestDeleteScenario(scenario:Scenario){confirmation={title:'Delete response?',message:'This response scenario will be removed from its job type.',target:scenario.name,confirmLabel:'Delete response',success:'Scenario deleted',action:async()=>{await call('DeleteScenario',scenario.id);editingScenario=null;await reload()}}}
-  async function setActive(type:JobType,value:string){type.activeScenarioId=value||null;await run(async()=>{await call('SaveJobType',type);await reload()})}
+  let expandedPendingTasks:Record<string,boolean> = {}
+  let savingWorkerIds:string[] = []
+  async function saveWorkerSelection(type:JobType, value:string, field:'mode'|'activeScenarioId', select?:HTMLSelectElement){
+    if(savingWorkerIds.includes(type.id))return
+    savingWorkerIds=[...savingWorkerIds,type.id]
+    showError('')
+    try {
+      if(field==='mode'&&value==='auto'&&!type.activeScenarioId)throw new Error('Select an active response before switching to Automatic mode.')
+      const saved=await call<JobType>('SaveJobType',{...type,[field]:value||null})
+      jobTypes=jobTypes.map(t=>t.id===saved.id?saved:t)
+    } catch(e:any) {
+      showError(e?.message||String(e))
+    } finally {
+      if(select)select.value=jobTypes.find(t=>t.id===type.id)?.[field]||''
+      savingWorkerIds=savingWorkerIds.filter(id=>id!==type.id)
+    }
+  }
+  async function setMode(type:JobType, select:HTMLSelectElement){await saveWorkerSelection(type,select.value,'mode',select)}
   async function formatScenario(){if(!editingScenario)return;await run(async()=>{editingScenario!.variablesJson=await call('FormatJSON',editingScenario!.variablesJson)})}
 
   async function submit(a:Activation){const d=drafts[a.id];await run(async()=>{await call('SaveDraft',a.id,d);await call('SubmitResponse',a.id,d);await reload()},'Response confirmed by Camunda')}
@@ -182,6 +226,34 @@
   onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().then(()=>checkForUpdates()).catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(noticeTimer)window.clearTimeout(noticeTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
 </script>
 
+{#snippet workerCard(task:ProcessTask, type:JobType|undefined, waiting:Activation[], cardKey:string, description='')}
+            <article class="process-task">
+              <div class="process-task-head">
+                <div class="process-task-identity"><div class="process-task-title"><h3>{task.name||task.id}</h3>{#if type&&!task.dynamic}<span class="status {rt(type.id).state}">{stateLabel(rt(type.id).state)}</span>{/if}</div>{#if task.jobType!==(task.name||task.id)}<code>{task.jobType}</code>{/if}</div>
+                {#if type&&!task.dynamic}<button class="icon-btn" aria-label={`Worker settings for ${task.name||task.id}`} title="Worker settings" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingType={...type}}><Ellipsis size={18}/></button>{/if}
+              </div>
+              {#if description}<p class="hint">{description}</p>{/if}
+              {#if task.dynamic}<p class="hint">This job type is an expression resolved at runtime. Configure its resolved value in Job types.</p>
+              {:else if type}
+                <div class="process-task-config"><label>Mode<select aria-label={`Mode for ${task.name||task.id}`} value={type.mode} disabled={busy||savingWorkerIds.includes(type.id)} on:change={(e)=>setMode(type,e.currentTarget)}><option value="manual">Manual</option><option value="auto">Automatic</option></select></label></div>
+                {#if rt(type.id).lastError}<div class="inline-error">{rt(type.id).lastError}</div>{/if}
+                <div class="worker-responses" role="group" aria-label={`Responses for ${task.name||task.id}`}><span class="responses-label">Responses</span>{#each scenarios.filter(s=>s.jobTypeConfigId===type.id) as response}<div class="response-choice" class:chosen={response.id===type.activeScenarioId}><button class="response-select" aria-pressed={response.id===type.activeScenarioId} title={`${response.name} · ${outcomeLabel(response.outcome)}`} aria-label={`Select ${response.name} · ${outcomeLabel(response.outcome)}`} disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>{if(type.activeScenarioId!==response.id)void saveWorkerSelection(type,response.id,'activeScenarioId')}}><span>{response.name}</span></button><button class="response-edit" aria-label={`Edit ${response.name}`} title="Edit response" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingScenario={...response}}><Pencil size={13}/></button></div>{/each}<button class="add-response" disabled={busy} on:click={()=>newScenario(type.id)}><Plus size={12}/> Add response</button></div>
+              {:else}<div class="worker-responses"><span class="hint">No responses configured</span><button class="add-response" disabled={busy} on:click={()=>addTaskResponse(task)}><Plus size={12}/> Add response</button></div>{/if}
+              <div class="process-task-footer">
+                {#if waiting.length}<button class="link with-icon" aria-expanded={!!expandedPendingTasks[cardKey]} aria-controls={`pending-task-${cardKey}`} on:click={()=>expandedPendingTasks={...expandedPendingTasks,[cardKey]:!expandedPendingTasks[cardKey]}}><Clock3 size={14}/>{waiting.length} {waiting.length===1?'job':'jobs'} awaiting response</button>{:else}<span class="hint">No jobs awaiting response</span>{/if}
+                {#if type&&!task.dynamic}{#if rt(type.id).state==='running'||rt(type.id).state==='stopping'}<button class="ghost with-icon" disabled={busy} on:click={()=>stopType(type.id)}><Square size={12}/> Stop worker</button>{:else}<button class="ghost with-icon" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>startType(type.id)}><Play size={12}/> Start worker</button>{/if}{/if}
+              </div>
+              {#if waiting.length}<div class="task-pending" id={`pending-task-${cardKey}`} hidden={!expandedPendingTasks[cardKey]}>{#each waiting as a (a.id)}{#if drafts[a.id]}{@render pendingCard(a)}{/if}{/each}</div>{/if}
+            </article>
+{/snippet}
+
+{#snippet pendingCard(a:Activation)}
+        <article class="pending-card"><div class="pending-head"><div><span class="pill">{a.jobType}</span><h3>Job key <code>{a.jobKey}</code></h3><p>{a.bpmnProcessId} · {a.elementId} · instance {a.processInstanceKey} · received {fmtDate(a.receivedAt)}</p></div><span class="status running">Activation valid</span></div>
+          <div class="json-grid"><div><span class="field-label">Input variables</span><pre>{a.inputJson}</pre><details><summary>Custom headers</summary><pre>{a.customHeadersJson}</pre></details></div><div><label>Scenario<select value={draftScenarios[a.id]||''} on:change={(e)=>applyDraftScenario(a,(e.currentTarget as HTMLSelectElement).value)}><option value="">Select a scenario</option>{#each scenarios.filter(s=>s.jobTypeConfigId===a.jobTypeConfigId) as s}<option value={s.id}>{s.name}</option>{/each}</select></label><label>Outcome<select bind:value={drafts[a.id].outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label><div class="draft-editor"><JsonEditor bind:value={drafts[a.id].variablesJson} ariaLabel="Prepared response JSON" compact/></div><button class="link" on:click={()=>formatDraft(a.id)}>Format JSON</button>{#if drafts[a.id].outcome==='business_error'}<div class="two"><input bind:value={drafts[a.id].errorCode} placeholder="errorCode"/><input bind:value={drafts[a.id].errorMessage} placeholder="Message"/></div>{:else if drafts[a.id].outcome==='technical_failure'}<input bind:value={drafts[a.id].errorMessage} placeholder="Failure message"/><div class="two"><label>Remaining retries<input type="number" min="0" bind:value={drafts[a.id].remainingRetries}/></label><label>Backoff, ms<input type="number" min="0" bind:value={drafts[a.id].retryBackoffMs}/></label></div><small class="hint">remainingRetries is an absolute value. Reusing the same positive value may cause repeated activations.</small>{/if}</div></div>
+          <div class="submit-row"><button class="ghost" on:click={()=>saveDraft(a)} disabled={busy}>Save draft</button><button class="primary" on:click={()=>submit(a)} disabled={busy||a.sendStatus==='sending'}>Send to Camunda</button></div>
+        </article>
+{/snippet}
+
 <svelte:head><title>Camunda Stub Worker</title></svelte:head>
 
 {#if loading}<div class="splash"><span class="spinner"></span>Opening local database…</div>{:else}
@@ -189,9 +261,9 @@
   <aside>
     <div class="brand"><Waypoints size={17}/><strong>Stub Worker</strong></div>
     <nav>
+      <button class:active={tab==='process'} on:click={()=>tab='process'}><span><Waypoints size={18}/></span> Processes</button>
       <button class:active={tab==='types'} on:click={()=>tab='types'}><span><Boxes size={18}/></span> Job types</button>
       <button class:active={tab==='pending'} on:click={()=>tab='pending'}><span><Clock3 size={18}/></span> Awaiting response <b>{pending.length}</b></button>
-      <button class:active={tab==='process'} on:click={()=>tab='process'}><span><Play size={18}/></span> Start process</button>
       <button class:active={tab==='history'} on:click={()=>{tab='history';loadHistory(1)}}><span><History size={18}/></span> History</button>
       <button class:active={tab==='settings'} on:click={()=>tab='settings'}><span><Cable size={18}/></span> Connections</button>
     </nav>
@@ -216,46 +288,56 @@
       <section class="workspace">
         <div class="command-bar"><strong>{jobTypes.length} {jobTypes.length===1?'job type':'job types'}</strong><div class="actions"><button class="secondary with-icon" on:click={newType}><Plus size={14}/> Add</button>{#if jobTypes.length>1}{#if jobTypes.some(x=>rt(x.id).state==='running'||rt(x.id).state==='stopping')}<button class="ghost with-icon" on:click={stopAll}><Square size={12}/> Stop all</button>{/if}<button class="ghost with-icon" on:click={startAll} disabled={busy}><Play size={12}/> Start all</button>{/if}</div></div>
         {#if !jobTypes.length}<div class="empty"><div><Boxes size={24} strokeWidth={1.5}/></div><h3>No job types</h3><p>Add the exact job type from your BPMN model, then define its responses.</p><button class="secondary with-icon" on:click={newType}><Plus size={14}/> Add job type</button></div>{/if}
-        {#if jobTypes.length}<div class="worker-table"><div class="worker-columns" aria-hidden="true"><span>Job type</span><span>Mode</span><span>Scenario</span><span>Active</span><span>State</span><span></span></div>
-        {#each jobTypes as type}
-          <article class="worker-row">
-            <div class="worker-main"><div class="worker-identity"><h3>{type.jobType}</h3>{#if type.description}<p>{type.description}</p>{/if}</div><span class="worker-value">{type.mode==='auto'?'Automatic':'Manual'}</span><span class="meta-select"><select aria-label="Active scenario" value={type.activeScenarioId||''} on:change={(e)=>setActive(type,(e.currentTarget as HTMLSelectElement).value)}><option value="">Not selected</option>{#each scenarios.filter(s=>s.jobTypeConfigId===type.id) as s}<option value={s.id}>{s.name}</option>{/each}</select><ChevronDown size={12}/></span><span class="worker-value mono">{rt(type.id).activeJobs} / {type.maxActiveJobs}</span><span class="status {rt(type.id).state}">{stateLabel(rt(type.id).state)}</span><div class="worker-actions">{#if rt(type.id).state==='running'||rt(type.id).state==='stopping'}<button class="danger-text" on:click={()=>stopType(type.id)}>Stop</button>{:else}<button class="row-action" on:click={()=>startType(type.id)} disabled={busy}>Start</button>{/if}<button class="icon-btn" aria-label="Edit job type" title="Edit" on:click={()=>editingType={...type}}><Ellipsis size={17}/></button></div></div>
-            {#if rt(type.id).lastError}<div class="inline-error">{rt(type.id).lastError}</div>{/if}
-            <div class="worker-responses"><span class="responses-label">Responses</span>{#each scenarios.filter(s=>s.jobTypeConfigId===type.id) as s}<button class="response-link" class:chosen={s.id===type.activeScenarioId} on:click={()=>editingScenario={...s}}><i class={s.outcome}></i><span>{s.name}</span><small>{outcomeLabel(s.outcome)}</small></button>{/each}<button class="add-response" on:click={()=>newScenario(type.id)}><Plus size={12}/> Add response</button></div>
-          </article>
-        {/each}</div>{/if}
+        {#if jobTypes.length}<div class="process-tasks">
+          {#each jobTypes as type (type.id)}
+            {@render workerCard({id:type.id,name:type.jobType,jobType:type.jobType,dynamic:false},type,pending.filter(a=>a.jobTypeConfigId===type.id),`type-${type.id}`,type.description)}
+          {/each}
+        </div>{/if}
       </section>
     {:else if tab==='process'}
       <section class="workspace">
-        <form class="process-form" on:submit|preventDefault={startProcess}>
-          <div><h2>Start a process instance</h2></div>
+        <div class="process-form">
+          <div class="process-overview-head"><div><h2>Choose a process</h2><p class="hint">Configure shared responses, handle waiting jobs, and start a process instance.</p></div><button type="button" class="primary with-icon" disabled={!processId.trim()||startingProcess} on:click={()=>{processError='';processResult=null;showProcessStart=true}}><Play size={14}/> Start process…</button></div>
           <div class="two">
             <label>BPMN process ID
               {#if currentProfile?.operateUrl && !manualProcessId}
                 <select bind:value={processId} required disabled={startingProcess||loadingProcesses} on:change={()=>processVersion=undefined}><option value="">{loadingProcesses?'Loading processes…':'Select a deployed process'}</option>{#each deployedProcesses as process}<option value={process.bpmnProcessId}>{process.name ? `${process.name} — ` : ''}{process.bpmnProcessId} (v{process.latestVersion})</option>{/each}</select>
               {:else}<input bind:value={processId} placeholder="for example, order_process" required disabled={startingProcess}/>{/if}
             </label>
-            <label>Version (optional)<input type="number" min="1" max="2147483647" step="1" bind:value={processVersion} placeholder="Latest deployed version" disabled={startingProcess}/></label>
+            <label>Version
+            {#if selectedProcess&&!manualProcessId}<select aria-label="Process version" bind:value={processVersion} disabled={startingProcess}><option value={undefined}>Latest (v{selectedProcess.latestVersion})</option>{#each selectedProcess.versions||[] as version}<option value={version.version}>Version {version.version}</option>{/each}</select>
+            {:else}<input type="number" min="1" max="2147483647" step="1" bind:value={processVersion} placeholder="Latest deployed version" disabled={startingProcess}/>{/if}</label>
           </div>
           {#if currentProfile?.operateUrl}
             <div class="actions"><button type="button" class="ghost" on:click={loadProcesses} disabled={loadingProcesses||startingProcess}>{loadingProcesses?'Loading…':'Refresh processes'}</button><button type="button" class="link" on:click={()=>manualProcessId=!manualProcessId} disabled={startingProcess}>{manualProcessId?'Choose from deployed processes':'Enter ID manually'}</button></div>
             <p class="hint">Uses the Operate authentication configured in <button type="button" class="link" on:click={editCurrentProfile}>connection settings</button>.</p>
             {#if processesError}<div class="inline-error" role="alert">{processesError} You can still enter a process ID manually.</div>{:else if processesLoaded&&!loadingProcesses&&!deployedProcesses.length}<p class="hint">No deployed processes found in the default tenant. Recently deployed models may take a moment to appear in Operate.</p>{/if}
           {:else}<p class="hint">To choose from deployed processes, <button type="button" class="link" on:click={editCurrentProfile}>set the Operate URL in your connection profile</button>.</p>{/if}
-          <div class="editor-field"><div class="editor-field-head"><span class="field-label">JSON variables</span><button type="button" class="link" on:click={formatProcessVariables} disabled={busy||startingProcess}>Format JSON</button></div><JsonEditor bind:value={processVariables} ariaLabel="Process variables"/></div>
-          <div class="submit-row"><button class="primary with-icon" disabled={busy||startingProcess||!processId.trim()}><Play size={14}/>{startingProcess?'Starting…':'Start process'}</button></div>
-          {#if processError}<div class="inline-error" role="alert">{processError}</div>{/if}
-          {#if processResult}<div class="process-result" role="status"><h3>Process started</h3><p>{processResultProfile} · {processResult.bpmnProcessId} · version {processResult.version}</p><dl><dt>Process instance key</dt><dd><code>{processResult.processInstanceKey}</code></dd><dt>Process definition key</dt><dd><code>{processResult.processDefinitionKey}</code></dd></dl></div>{/if}
-        </form>
+        </div>
+        {#if processId}
+          <div class="command-bar process-task-heading"><div><strong>Worker tasks</strong><p class="hint">Responses, mode, and worker controls are shared by job type across this connection.</p></div><button class="ghost with-icon" disabled={busy||tasksLoading||!processWorkers.length} on:click={startProcessWorkers}><Play size={12}/> Start workers</button></div>
+          {#if tasksLoading}<p class="hint" role="status">Loading BPMN tasks…</p>
+          {:else if tasksError}<div class="inline-error" role="alert">{tasksError} <button class="link" on:click={()=>loadTasks(taskSource,selectedDefinition?.key||'',processId)}>Retry</button></div>
+          {:else if !selectedDefinition}<p class="hint">Select a deployed process to discover its tasks. You can still start a process by ID and configure responses in Job types.</p>
+          {:else if !processTasks.length}<div class="table-empty">This process version has no worker tasks. Tasks inside called processes are configured separately.</div>
+          {:else}
+          <div class="process-tasks">
+          {#each processTasks as task (task.id)}
+            {@const type = jobTypes.find(t=>t.jobType===task.jobType)}
+            {@const waiting = processPending.filter(a=>a.elementId===task.id)}
+            {@render workerCard(task,type,waiting,`process-${selectedDefinition?.key}-${task.id}`)}
+          {/each}
+          </div>
+          {/if}
+          <p class="hint">Pending jobs are manual jobs activated by this app for the selected process version. Workers can also receive jobs from other processes using the same job type.</p>
+          {#each processPending.filter(a=>!processTasks.some(task=>task.id===a.elementId)) as a (a.id)}{#if drafts[a.id]}{@render pendingCard(a)}{/if}{/each}
+        {:else}<div class="empty"><div><Waypoints size={24}/></div><h3>Select a BPMN process to get started</h3><p>Its worker tasks and saved responses will appear here.</p></div>{/if}
       </section>
     {:else if tab==='pending'}
       <section class="workspace">
       {#if !pending.length}<div class="empty"><div><Check size={24} strokeWidth={1.7}/></div><h3>No jobs awaiting response</h3><p>Jobs activated by manual workers will appear here.</p></div>{/if}
       {#each pending as a (a.id)}
-        <article class="pending-card"><div class="pending-head"><div><span class="pill">{a.jobType}</span><h3>Job key <code>{a.jobKey}</code></h3><p>{a.bpmnProcessId} · {a.elementId} · received {fmtDate(a.receivedAt)}</p></div><span class="status running">Activation valid</span></div>
-          <div class="json-grid"><div><span class="field-label">Input variables</span><pre>{a.inputJson}</pre><details><summary>Custom headers</summary><pre>{a.customHeadersJson}</pre></details></div><div><label>Scenario<select value={draftScenarios[a.id]||''} on:change={(e)=>applyDraftScenario(a,(e.currentTarget as HTMLSelectElement).value)}><option value="">Select a scenario</option>{#each scenarios.filter(s=>s.jobTypeConfigId===a.jobTypeConfigId) as s}<option value={s.id}>{s.name}</option>{/each}</select></label><label>Outcome<select bind:value={drafts[a.id].outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label><div class="draft-editor"><JsonEditor bind:value={drafts[a.id].variablesJson} ariaLabel="Prepared response JSON" compact/></div><button class="link" on:click={()=>formatDraft(a.id)}>Format JSON</button>{#if drafts[a.id].outcome==='business_error'}<div class="two"><input bind:value={drafts[a.id].errorCode} placeholder="errorCode"/><input bind:value={drafts[a.id].errorMessage} placeholder="Message"/></div>{:else if drafts[a.id].outcome==='technical_failure'}<input bind:value={drafts[a.id].errorMessage} placeholder="Failure message"/><div class="two"><label>Remaining retries<input type="number" min="0" bind:value={drafts[a.id].remainingRetries}/></label><label>Backoff, ms<input type="number" min="0" bind:value={drafts[a.id].retryBackoffMs}/></label></div><small class="hint">remainingRetries is an absolute value. Reusing the same positive value may cause repeated activations.</small>{/if}</div></div>
-          <div class="submit-row"><button class="ghost" on:click={()=>saveDraft(a)} disabled={busy}>Save draft</button><button class="primary" on:click={()=>submit(a)} disabled={busy||a.sendStatus==='sending'}>Send to Camunda</button></div>
-        </article>
+        {#if drafts[a.id]}{@render pendingCard(a)}{/if}
       {/each}
       </section>
     {:else if tab==='history'}
@@ -280,16 +362,30 @@
   </main>
 </div>
 
-{#if editingType}<div class="modal-backdrop" role="presentation"><form class="modal" on:submit|preventDefault={saveType}><div class="modal-title"><div><h2>{editingType.id?'Edit':'New'} job type</h2></div><button type="button" class="icon-btn" aria-label="Close" on:click={()=>editingType=null}><X size={18}/></button></div><label>Job type<input bind:value={editingType.jobType} placeholder="for example, send-email" required/></label><label>Description<textarea class="short" bind:value={editingType.description}></textarea></label><div class="two"><label>Mode<select bind:value={editingType.mode} on:change={()=>{if(editingType&&!editingType.id)editingType.maxActiveJobs=editingType.mode==='manual'?1:5}}><option value="manual">Manual</option><option value="auto">Automatic</option></select></label><label>Activation limit<input type="number" min="1" bind:value={editingType.maxActiveJobs}/></label></div><div class="modal-actions">{#if editingType.id}<button type="button" class="danger-text" on:click={()=>requestDeleteType(editingType!)}>Delete job type</button>{/if}<span></span><button type="button" class="ghost" on:click={()=>editingType=null}>Cancel</button><button class="primary" disabled={busy}>Save</button></div></form></div>{/if}
+{#if showProcessStart}
+<Modal label="Start process" onClose={()=>showProcessStart=false}>
+  <form class="modal wide" on:submit|preventDefault={startProcess}>
+    <div class="modal-title"><h2 id="start-process-title">Start process</h2><button type="button" class="icon-btn" aria-label="Close start process" on:click={()=>showProcessStart=false}><X size={18}/></button></div>
+    <div class="start-process-context"><strong>{selectedProcess?.name||processId}</strong><code>{processId}</code><span>{currentProfile?.name} · {selectedDefinition?.version||processVersion ? `Version ${selectedDefinition?.version||processVersion}` : 'Latest deployed version'}</span></div>
+    <div class="editor-field"><div class="editor-field-head"><span class="field-label">JSON variables</span><button type="button" class="link" on:click={formatProcessVariables} disabled={busy||startingProcess}>Format JSON</button></div><JsonEditor bind:value={processVariables} ariaLabel="Process variables"/></div>
+          {#if processError}<div class="inline-error" role="alert">{processError}</div>{/if}
+          {#if processResult}<div class="process-result" role="status"><h3>Process started</h3><p>{processResultProfile} · {processResult.bpmnProcessId} · version {processResult.version}</p><dl><dt>Process instance key</dt><dd><code>{processResult.processInstanceKey}</code></dd><dt>Process definition key</dt><dd><code>{processResult.processDefinitionKey}</code></dd></dl></div>{/if}
 
-{#if editingScenario}<div class="modal-backdrop"><form class="modal wide" on:submit|preventDefault={saveScenario}><div class="modal-title"><div><h2>{editingScenario.id?'Edit':'New'} response scenario</h2></div><button type="button" class="icon-btn" aria-label="Close" on:click={()=>editingScenario=null}><X size={18}/></button></div><div class="two"><label>Name<input bind:value={editingScenario.name} required/></label><label>Outcome<select bind:value={editingScenario.outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label></div><label>Description<input bind:value={editingScenario.description}/></label><div class="editor-field"><div class="editor-field-head"><span class="field-label">JSON variables</span><button type="button" class="link" on:click={formatScenario}>Format JSON</button></div><JsonEditor bind:value={editingScenario.variablesJson} ariaLabel="Scenario JSON variables"/></div><label>Automatic response delay, ms<input type="number" min="0" bind:value={editingScenario.delayMs}/></label>{#if editingScenario.outcome==='business_error'}<div class="two"><label>errorCode<input bind:value={editingScenario.errorCode} required/></label><label>errorMessage<input bind:value={editingScenario.errorMessage}/></label></div>{:else if editingScenario.outcome==='technical_failure'}<label>errorMessage<input bind:value={editingScenario.errorMessage}/></label><div class="two"><label>remainingRetries<input type="number" min="0" bind:value={editingScenario.remainingRetries}/></label><label>retryBackoffMs<input type="number" min="0" bind:value={editingScenario.retryBackoffMs}/></label></div><small class="hint">This is the absolute retry count sent to the server, not a decrement command.</small>{/if}<div class="modal-actions">{#if editingScenario.id}<button type="button" class="danger-text" on:click={()=>requestDeleteScenario(editingScenario!)}>Delete</button><button type="button" class="ghost" on:click={()=>duplicateScenario(editingScenario!.id)}>Duplicate</button>{/if}<span></span><button type="button" class="ghost" on:click={()=>editingScenario=null}>Cancel</button><button class="primary" disabled={busy}>Save</button></div></form></div>{/if}
+    <div class="modal-actions"><span></span><button type="button" class="ghost" on:click={()=>showProcessStart=false}>{processResult?'Close':'Cancel'}</button><button class="primary with-icon" disabled={busy||startingProcess||!processId.trim()}><Play size={14}/>{startingProcess?'Starting…':processResult?'Start another instance':'Start process'}</button></div>
+  </form>
+</Modal>
+{/if}
 
-{#if editingProfile}<div class="modal-backdrop"><form class="modal wide" on:submit|preventDefault={saveProfile}><div class="modal-title"><div><h2>{editingProfile.id?'Edit connection profile':'New connection profile'}</h2></div><button type="button" class="icon-btn" aria-label="Close" on:click={closeProfile}><X size={18}/></button></div><label>Name<input bind:value={editingProfile.name} required/></label><div class="two"><label>Host<input bind:value={editingProfile.host} required/></label><label>Port<input type="number" min="1" max="65535" bind:value={editingProfile.port}/></label></div><label>Operate URL (optional)<input type="url" bind:value={editingProfile.operateUrl} placeholder="http://localhost:8081"/></label><small class="hint">Used to list deployed processes. Enter the Operate base URL for this Zeebe cluster, with or without /v1.</small><label>Operate authentication<select bind:value={editingOperateAuth.mode} on:change={()=>editingOperateAuth={...emptyOperateAuth(),mode:editingOperateAuth.mode}}><option value="none">None</option><option value="password">Username and password</option><option value="token">Bearer token</option></select></label>
+{#if editingType}<Modal label="Job type settings" onClose={()=>editingType=null}><form class="modal" on:submit|preventDefault={saveType}><div class="modal-title"><div><h2>{editingType.id?'Edit':'New'} job type</h2></div><button type="button" class="icon-btn" aria-label="Close" on:click={()=>editingType=null}><X size={18}/></button></div><label>Job type<input bind:value={editingType.jobType} placeholder="for example, send-email" required/></label><label>Description<textarea class="short" bind:value={editingType.description}></textarea></label><div class="two"><label>Mode<select bind:value={editingType.mode} on:change={()=>{if(editingType&&!editingType.id)editingType.maxActiveJobs=editingType.mode==='manual'?1:5}}><option value="manual">Manual</option><option value="auto">Automatic</option></select></label><label>Activation limit<input type="number" min="1" bind:value={editingType.maxActiveJobs}/></label></div><div class="modal-actions">{#if editingType.id}<button type="button" class="danger-text" on:click={()=>requestDeleteType(editingType!)}>Delete job type</button>{/if}<span></span><button type="button" class="ghost" on:click={()=>editingType=null}>Cancel</button><button class="primary" disabled={busy}>Save</button></div></form></Modal>{/if}
+
+{#if editingScenario}<Modal label="Response scenario" onClose={()=>editingScenario=null}><form class="modal wide" on:submit|preventDefault={saveScenario}><div class="modal-title"><div><h2>{editingScenario.id?'Edit':'New'} response scenario</h2></div><div class="actions">{#if editingScenario.id}<ActionMenu><button type="button" disabled={busy} on:click={()=>duplicateScenario(editingScenario!.id)}>Duplicate response</button><button type="button" class="danger-text" disabled={busy} on:click={()=>requestDeleteScenario(editingScenario!)}>Delete response…</button></ActionMenu>{/if}<button type="button" class="icon-btn" aria-label="Close" on:click={()=>editingScenario=null}><X size={18}/></button></div></div><p class="hint">Shared response: changes apply everywhere this job type is used in this connection.</p><div class="two"><label>Name<input data-modal-initial-focus bind:value={editingScenario.name} required/></label><label>Outcome<select bind:value={editingScenario.outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label></div><label>Description<input bind:value={editingScenario.description}/></label><div class="editor-field"><div class="editor-field-head"><span class="field-label">JSON variables</span><button type="button" class="link" on:click={formatScenario}>Format JSON</button></div><JsonEditor bind:value={editingScenario.variablesJson} ariaLabel="Scenario JSON variables"/></div><label>Automatic response delay, ms<input type="number" min="0" bind:value={editingScenario.delayMs}/></label>{#if editingScenario.outcome==='business_error'}<div class="two"><label>errorCode<input bind:value={editingScenario.errorCode} required/></label><label>errorMessage<input bind:value={editingScenario.errorMessage}/></label></div>{:else if editingScenario.outcome==='technical_failure'}<label>errorMessage<input bind:value={editingScenario.errorMessage}/></label><div class="two"><label>remainingRetries<input type="number" min="0" bind:value={editingScenario.remainingRetries}/></label><label>retryBackoffMs<input type="number" min="0" bind:value={editingScenario.retryBackoffMs}/></label></div><small class="hint">This is the absolute retry count sent to the server, not a decrement command.</small>{/if}<div class="modal-actions"><span></span><button type="button" class="ghost" on:click={()=>editingScenario=null}>Cancel</button><button class="primary" disabled={busy}>Save</button></div></form></Modal>{/if}
+
+{#if editingProfile}<Modal label="Connection profile" onClose={closeProfile}><form class="modal wide" on:submit|preventDefault={saveProfile}><div class="modal-title"><div><h2>{editingProfile.id?'Edit connection profile':'New connection profile'}</h2></div><button type="button" class="icon-btn" aria-label="Close" on:click={closeProfile}><X size={18}/></button></div><label>Name<input bind:value={editingProfile.name} required/></label><div class="two"><label>Host<input bind:value={editingProfile.host} required/></label><label>Port<input type="number" min="1" max="65535" bind:value={editingProfile.port}/></label></div><label>Operate URL (optional)<input type="url" bind:value={editingProfile.operateUrl} placeholder="http://localhost:8081"/></label><small class="hint">Used to list deployed processes. Enter the Operate base URL for this Zeebe cluster, with or without /v1.</small><label>Operate authentication<select bind:value={editingOperateAuth.mode} on:change={()=>editingOperateAuth={...emptyOperateAuth(),mode:editingOperateAuth.mode}}><option value="none">None</option><option value="password">Username and password</option><option value="token">Bearer token</option></select></label>
 {#if editingOperateAuth.mode==='password'}<div class="two"><label>Operate username<input autocomplete="off" bind:value={editingOperateAuth.username} required/></label><label>Operate password<input type="password" autocomplete="off" bind:value={editingOperateAuth.password} required/></label></div><small class="hint">For Operate’s built-in login. Identity/SSO deployments may require a bearer token.</small>
 {:else if editingOperateAuth.mode==='token'}<label>Operate bearer token<input type="password" autocomplete="off" bind:value={editingOperateAuth.token} required/></label>{/if}
-<small class="hint">Credentials are saved in the local SQLite database and restored when the app opens. Exports do not include credentials.</small><label>Camunda version<input list="camunda-versions" bind:value={editingProfile.selectedVersion} pattern="8\.[0-9]+(\.[0-9]+)?" placeholder="8.5 or 8.x.y" required/><datalist id="camunda-versions"><option value="8.5">Verified</option><option value="8.6">Compatibility not verified</option><option value="8.7">Compatibility not verified</option><option value="8.8">Compatibility not verified</option></datalist></label>{#if editingProfile.selectedVersion!=='8.5'}<small class="hint warn-text">API 8.5 compatibility mode. Compatibility has not been verified.</small>{/if}<div class="three"><label>Command, ms<input type="number" min="1" bind:value={editingProfile.commandTimeoutMs}/></label><label>Activation, ms<input type="number" min="1" bind:value={editingProfile.activationTimeoutMs}/></label><label>Renewal, ms<input type="number" min="1" bind:value={editingProfile.renewalIntervalMs}/></label></div><div class="two"><label>Global limit<input type="number" min="1" bind:value={editingProfile.maxActiveJobs}/></label><label>History retention, days<input type="number" min="1" bind:value={editingProfile.historyRetentionDays}/></label></div><div class="modal-actions"><span></span><button type="button" class="ghost" on:click={closeProfile}>Cancel</button><button class="primary" disabled={busy}>Save</button></div></form></div>{/if}
+<small class="hint">Credentials are saved in the local SQLite database and restored when the app opens. Exports do not include credentials.</small><label>Camunda version<input list="camunda-versions" bind:value={editingProfile.selectedVersion} pattern="8\.[0-9]+(\.[0-9]+)?" placeholder="8.5 or 8.x.y" required/><datalist id="camunda-versions"><option value="8.5">Verified</option><option value="8.6">Compatibility not verified</option><option value="8.7">Compatibility not verified</option><option value="8.8">Compatibility not verified</option></datalist></label>{#if editingProfile.selectedVersion!=='8.5'}<small class="hint warn-text">API 8.5 compatibility mode. Compatibility has not been verified.</small>{/if}<div class="three"><label>Command, ms<input type="number" min="1" bind:value={editingProfile.commandTimeoutMs}/></label><label>Activation, ms<input type="number" min="1" bind:value={editingProfile.activationTimeoutMs}/></label><label>Renewal, ms<input type="number" min="1" bind:value={editingProfile.renewalIntervalMs}/></label></div><div class="two"><label>Global limit<input type="number" min="1" bind:value={editingProfile.maxActiveJobs}/></label><label>History retention, days<input type="number" min="1" bind:value={editingProfile.historyRetentionDays}/></label></div><div class="modal-actions"><span></span><button type="button" class="ghost" on:click={closeProfile}>Cancel</button><button class="primary" disabled={busy}>Save</button></div></form></Modal>{/if}
 
-{#if selectedHistory}<div class="modal-backdrop"><div class="modal wide history-detail"><div class="modal-title"><div><h2>{selectedHistory.jobType} activation</h2></div><button class="icon-btn" aria-label="Close" on:click={()=>selectedHistory=null}><X size={18}/></button></div><div class="key-grid"><span>Job key<code>{selectedHistory.jobKey}</code></span><span>Process instance<code>{selectedHistory.processInstanceKey}</code></span><span>Received<b>{fmtDate(selectedHistory.receivedAt)}</b></span><span>Activation<b>{selectedHistory.activationState}</b></span></div>{#if selectedHistory.activationStateReason}<div class="inline-error">{selectedHistory.activationStateReason}</div>{/if}<h3>Input variables</h3><pre>{selectedHistory.inputJson}</pre><h3>Send attempts</h3>{#if !attempts.length}<p>No command has been sent.</p>{/if}{#each attempts as item}<div class="attempt"><b>#{item.sequence} · {outcomeLabel(item.command)}</b><span class="send {item.status}">{sendLabel(item.status)}</span><small>{item.durationMs} ms · {item.diagnosticCode} {item.diagnosticText}</small><pre>{item.payloadJson}</pre></div>{/each}</div></div>{/if}
+{#if selectedHistory}<Modal label="Activation history" onClose={()=>selectedHistory=null}><div class="modal wide history-detail"><div class="modal-title"><div><h2>{selectedHistory.jobType} activation</h2></div><button class="icon-btn" aria-label="Close" on:click={()=>selectedHistory=null}><X size={18}/></button></div><div class="key-grid"><span>Job key<code>{selectedHistory.jobKey}</code></span><span>Process instance<code>{selectedHistory.processInstanceKey}</code></span><span>Received<b>{fmtDate(selectedHistory.receivedAt)}</b></span><span>Activation<b>{selectedHistory.activationState}</b></span></div>{#if selectedHistory.activationStateReason}<div class="inline-error">{selectedHistory.activationStateReason}</div>{/if}<h3>Input variables</h3><pre>{selectedHistory.inputJson}</pre><h3>Send attempts</h3>{#if !attempts.length}<p>No command has been sent.</p>{/if}{#each attempts as item}<div class="attempt"><b>#{item.sequence} · {outcomeLabel(item.command)}</b><span class="send {item.status}">{sendLabel(item.status)}</span><small>{item.durationMs} ms · {item.diagnosticCode} {item.diagnosticText}</small><pre>{item.payloadJson}</pre></div>{/each}</div></Modal>{/if}
 
-{#if confirmation}<div class="modal-backdrop confirm-backdrop"><div class="modal confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"><div class="modal-title"><h2 id="confirm-title">{confirmation.title}</h2><button class="icon-btn" aria-label="Close" on:click={()=>confirmation=null}><X size={18}/></button></div>{#if confirmation.target}<code class="confirm-target">{confirmation.target}</code>{/if}<p>{confirmation.message}</p><div class="modal-actions"><span></span><button class="ghost" on:click={()=>confirmation=null}>Cancel</button><button class="destructive" on:click={confirmAction} disabled={busy}>{confirmation.confirmLabel}</button></div></div></div>{/if}
+{#if confirmation}<Modal label="Confirm action" onClose={()=>confirmation=null} role="alertdialog"><div class="modal confirm-dialog"><div class="modal-title"><h2 id="confirm-title">{confirmation.title}</h2><button class="icon-btn" aria-label="Close" on:click={()=>confirmation=null}><X size={18}/></button></div>{#if confirmation.target}<code class="confirm-target">{confirmation.target}</code>{/if}<p>{confirmation.message}</p><div class="modal-actions"><span></span><button class="ghost" on:click={()=>confirmation=null}>Cancel</button><button class="destructive" on:click={confirmAction} disabled={busy}>{confirmation.confirmLabel}</button></div></div></Modal>{/if}
 {/if}

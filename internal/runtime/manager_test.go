@@ -193,3 +193,43 @@ func TestStopCancelsActivePoll(t *testing.T) {
 		}
 	}
 }
+
+func TestFirstResponseAllowsImmediateAutomaticStart(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "first-response.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	profiles, err := s.Profiles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.SaveJobType(ctx, domain.JobTypeConfig{ProfileID: profiles[0].ID, JobType: "first-response", Mode: domain.ModeManual, MaxActiveJobs: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := s.SaveScenario(ctx, domain.Scenario{JobTypeConfigID: cfg.ID, Name: "Ok", Outcome: domain.OutcomeSuccess, VariablesJSON: "{}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = s.JobType(ctx, cfg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ActiveScenarioID == nil || *cfg.ActiveScenarioID != response.ID {
+		t.Fatal("first response was not selected on save")
+	}
+	cfg.Mode = domain.ModeAuto
+	if _, err = s.SaveJobType(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewManager(s, fakeFactory{&fakeGateway{}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if err = m.StartType(ctx, cfg.ID); err != nil {
+		t.Fatalf("automatic start after first response: %v", err)
+	}
+}

@@ -148,8 +148,13 @@ pre { font-family: var(--mono); }
 .hint { color: #858c91; font-size: 12px; line-height: 1.45; }
 .warn-text { color: var(--warning) !important; }
 
-.filters { display: flex; gap: 7px; margin: 0 0 10px; }
-.filters input { flex: 1; }
+.filters { display: grid; gap: 12px; margin: 0 0 18px; }
+.history-filter-main { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(140px, 1fr)); gap: 8px; }
+.history-filter-main > * { min-width: 0; width: 100%; }
+.history-filter-dates { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.history-filter-dates label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.history-filter-dates input { width: 180px; min-width: 180px; color-scheme: dark; }
+@media (max-width: 1100px) { .history-filter-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .filters .secondary { height: 36px; }
 .table-wrap { overflow: hidden; border-block: 1px solid #303438; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -190,7 +195,6 @@ tbody tr:hover { background: #202427; }
 .toast-region { position: fixed; right: 20px; bottom: 20px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .toast { min-width: 280px; max-width: min(500px, calc(100vw - 40px)); display: flex; justify-content: space-between; gap: 16px; padding: 10px 12px; background: #24282b; border: 1px solid #4a5054; border-radius: 3px; box-shadow: 0 14px 38px #0008; font-size: 13px; }
 .toast.error { border-color: #74464a; }
-.toast.success { border-color: #487068; }
 .toast button { display: grid; place-items: center; padding: 2px; color: white; background: transparent; border: 0; }
 .inline-error { margin: 7px 0; padding: 8px; color: #df9497; background: #2a1f20; border-left: 2px solid var(--danger); font-size: 12px; }
 
@@ -243,14 +247,16 @@ tbody tr:hover { background: #202427; }
 .process-task-heading .hint { margin: 6px 0 0; }
 .process-tasks { display: grid; gap: 14px; }
 .process-task { border: 1px solid var(--rule); border-radius: 4px; background: var(--workbench); overflow: hidden; padding: 18px 20px 0; }
-.process-task-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
-.process-task-identity { min-width: 0; }
+.process-task-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
+.process-task-identity { min-width: 0; flex: 1 1 200px; }
 .process-task-title { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .process-task-title h3 { margin: 0; overflow-wrap: anywhere; }
 .process-task-head code { display: block; margin-top: 5px; color: var(--muted); overflow-wrap: anywhere; }
-.process-task-config { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; max-width: 244px; margin-bottom: 16px; }
-.process-task-config label { display: grid; gap: 6px; margin: 0; min-width: 0; color: var(--muted); font-size: 12px; }
-.process-task-config select { width: 100%; min-width: 0; }
+.process-task-header-controls { display: flex; align-items: center; gap: 12px; margin-left: auto; flex-shrink: 0; }
+.mode-switch { display: inline-flex; padding: 3px; gap: 3px; border: 1px solid var(--rule); border-radius: 5px; background: var(--ink); }
+.mode-switch button { min-height: 30px; padding: 4px 12px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--muted); font-size: 13px; }
+.mode-switch button:hover:not(:disabled) { color: var(--text); background: var(--workbench); }
+.mode-switch button[aria-pressed="true"] { color: var(--text); background: var(--raised); border-color: var(--rule); }
 .process-task > .hint, .process-task > .inline-error { margin: 12px 0; }
 .process-task > .worker-responses { padding: 0; border: 0; min-height: 32px; gap: 8px; }
 .process-task .responses-label { display: none; }
@@ -268,7 +274,6 @@ tbody tr:hover { background: #202427; }
 .task-pending { padding: 0 0 8px; border-top: 1px solid var(--rule); }
 .task-pending[hidden] { display: none; }
 .task-pending .pending-card { margin: 12px 0; }
-@media (max-width: 700px) { .process-task-config { grid-template-columns: 1fr; } }
 
 .process-overview-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .process-overview-head > button { flex-shrink: 0; }

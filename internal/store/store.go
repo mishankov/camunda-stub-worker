@@ -288,6 +288,17 @@ func (s *Store) DeleteProfile(ctx context.Context, id string) error {
 	return err
 }
 
+// EnsureDefaultResponses persists the first response in display order for workers
+// without a valid selection. Existing selections are never replaced.
+func (s *Store) EnsureDefaultResponses(ctx context.Context, profileID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE job_type_configs
+ SET active_scenario_id=(SELECT id FROM scenarios WHERE job_type_config_id=job_type_configs.id ORDER BY name,id LIMIT 1), updated_at=?
+ WHERE profile_id=?
+ AND NOT EXISTS (SELECT 1 FROM scenarios WHERE id=job_type_configs.active_scenario_id AND job_type_config_id=job_type_configs.id)
+ AND EXISTS (SELECT 1 FROM scenarios WHERE job_type_config_id=job_type_configs.id)`, domain.UTCNow(), profileID)
+	return err
+}
+
 func (s *Store) JobTypes(ctx context.Context, profileID string) ([]domain.JobTypeConfig, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,profile_id,job_type,description,mode,active_scenario_id,max_active_jobs,created_at,updated_at FROM job_type_configs WHERE profile_id=? ORDER BY job_type`, profileID)
 	if err != nil {
@@ -392,8 +403,22 @@ func (s *Store) SaveScenario(ctx context.Context, v domain.Scenario) (domain.Sce
 		v.CreatedAt = now
 	}
 	v.UpdatedAt = now
-	_, err := s.db.ExecContext(ctx, `INSERT INTO scenarios(id,job_type_config_id,name,description,outcome,variables_json,delay_ms,error_code,error_message,remaining_retries,retry_backoff_ms,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,outcome=excluded.outcome,variables_json=excluded.variables_json,delay_ms=excluded.delay_ms,error_code=excluded.error_code,error_message=excluded.error_message,remaining_retries=excluded.remaining_retries,retry_backoff_ms=excluded.retry_backoff_ms,updated_at=excluded.updated_at`, v.ID, v.JobTypeConfigID, v.Name, v.Description, v.Outcome, v.VariablesJSON, v.DelayMS, v.ErrorCode, v.ErrorMessage, v.RemainingRetries, v.RetryBackoffMS, v.CreatedAt, v.UpdatedAt)
-	return v, friendlyConstraint(err)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return v, err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO scenarios(id,job_type_config_id,name,description,outcome,variables_json,delay_ms,error_code,error_message,remaining_retries,retry_backoff_ms,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,outcome=excluded.outcome,variables_json=excluded.variables_json,delay_ms=excluded.delay_ms,error_code=excluded.error_code,error_message=excluded.error_message,remaining_retries=excluded.remaining_retries,retry_backoff_ms=excluded.retry_backoff_ms,updated_at=excluded.updated_at`, v.ID, v.JobTypeConfigID, v.Name, v.Description, v.Outcome, v.VariablesJSON, v.DelayMS, v.ErrorCode, v.ErrorMessage, v.RemainingRetries, v.RetryBackoffMS, v.CreatedAt, v.UpdatedAt)
+	if err != nil {
+		return v, friendlyConstraint(err)
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE job_type_configs
+ SET active_scenario_id=(SELECT id FROM scenarios WHERE job_type_config_id=job_type_configs.id ORDER BY name,id LIMIT 1), updated_at=?
+ WHERE id=? AND NOT EXISTS (SELECT 1 FROM scenarios WHERE id=job_type_configs.active_scenario_id AND job_type_config_id=job_type_configs.id)`, now, v.JobTypeConfigID)
+	if err != nil {
+		return v, err
+	}
+	return v, tx.Commit()
 }
 
 func (s *Store) DeleteScenario(ctx context.Context, id string) error {

@@ -12,7 +12,7 @@
   type RuntimeState = { configId:string; state:string; activeJobs:number; lastError:string }
   type Activation = { id:string; jobTypeConfigId:string; jobKey:string; jobType:string; mode:'manual'|'auto'; processInstanceKey:string; bpmnProcessId:string; processDefinitionKey:string; elementId:string; retries:number; inputJson:string; customHeadersJson:string; scenarioSnapshotJson:string; draftJson:string; sendStatus:string; activationState:string; activationStateReason:string; receivedAt:string }
   type Draft = { outcome:'success'|'business_error'|'technical_failure'; variablesJson:string; errorCode:string; errorMessage:string; remainingRetries:number; retryBackoffMs:number }
-  type Confirmation = { title:string; message:string; target?:string; confirmLabel:string; success:string; action:()=>Promise<void> }
+  type Confirmation = { title:string; message:string; target?:string; confirmLabel:string; action:()=>Promise<void> }
   type UpdateInfo = { currentVersion:string; latestVersion:string; updateAvailable:boolean; releaseUrl:string }
 
   let tab:'types'|'process'|'pending'|'history'|'settings' = 'process'
@@ -41,15 +41,15 @@
       newScenario(type.id)
     })
   }
-  async function startProcessWorkers(){await run(async()=>{try{for(const type of processWorkers)if(rt(type.id).state!=='running')await call('StartType',type.id)}finally{await reload()}},'Process workers started')}
+  async function startProcessWorkers(){await run(async()=>{try{for(const type of processWorkers)if(rt(type.id).state!=='running')await call('StartType',type.id)}finally{await reload()}})}
   type OperateAuth = { mode:'none'|'token'|'password'; token:string; username:string; password:string }
   const emptyOperateAuth = ():OperateAuth => ({mode:'none',token:'',username:'',password:''})
   let editingOperateAuth = emptyOperateAuth()
   let processId = '', processVersion:number|undefined, processVariables = '{}'
   let showProcessStart = false
   let startingProcess = false, processError = '', processResult:ProcessInstance|null = null, processResultProfile = ''
-  let loading = true, busy = false, notice = '', error = ''
-  let noticeTimer:number|undefined, errorTimer:number|undefined
+  let loading = true, busy = false, error = ''
+  let errorTimer:number|undefined
   let profiles:Profile[] = [], selectedProfileId = '', jobTypes:JobType[] = [], scenarios:Scenario[] = [], runtime:RuntimeState[] = [], pending:Activation[] = []
   let connection:any = { state:'offline', message:'Connection not checked', selectedVersion:'8.5' }
   let dataPath = ''
@@ -79,14 +79,13 @@
   const parseDraft = (a:Activation):Draft => { try { return JSON.parse(a.draftJson) } catch { return {outcome:'success',variablesJson:'{}',errorCode:'',errorMessage:'',remainingRetries:0,retryBackoffMs:0} } }
 
   const notificationDurationMs = 5000
-  function showNotice(message:string) { notice=message; if(noticeTimer)window.clearTimeout(noticeTimer);noticeTimer=message?window.setTimeout(()=>{notice='';noticeTimer=undefined},notificationDurationMs):undefined }
   function showError(message:string) { error=message; if(errorTimer)window.clearTimeout(errorTimer);errorTimer=message?window.setTimeout(()=>{error='';errorTimer=undefined},notificationDurationMs):undefined }
 
-  async function run(fn:()=>Promise<any>, success='') { showError(''); busy=true; try { await fn(); if(success) showNotice(success) } catch(e:any) { showError(e?.message || String(e)) } finally { busy=false } }
+  async function run(fn:()=>Promise<any>) { showError(''); busy=true; try { await fn() } catch(e:any) { showError(e?.message || String(e)) } finally { busy=false } }
   async function reload() { const b = await call<any>('Bootstrap'); profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false }
   async function refreshLiveState() { if(refreshingLiveState)return;refreshingLiveState=true;try{const b=await call<any>('Bootstrap');runtime=b.runtime||[];connection=b.connection;pending=b.pending||[];for(const a of pending)if(!drafts[a.id]){drafts[a.id]=parseDraft(a);try{draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||''}catch{draftScenarios[a.id]=''}}}catch{}finally{refreshingLiveState=false} }
   async function selectProfile() { await run(async()=>{ await call('SelectProfile',selectedProfileId); await reload() }) }
-  async function checkConnection() { await run(async()=>{ connection=await call('CheckConnection') },'Connection check complete') }
+  async function checkConnection() { await run(async()=>{ connection=await call('CheckConnection') }) }
   function resetProcessSource(key:string){
     tasksRequest++;tasksSource='';processTasks=[];tasksError='';tasksLoading=false;processResult=null;processError='';processSourceKey=key;processListRequest++;deployedProcesses=[];processesLoaded=false;loadingProcesses=false;processesError='';processId='';processVersion=undefined;manualProcessId=false
   }
@@ -111,21 +110,21 @@
     } catch(e:any) { processError=e?.message||String(e) } finally { startingProcess=false }
   }
   async function formatProcessVariables(){await run(async()=>{processVariables=await call('FormatJSON',processVariables)})}
-  async function startAll(){await run(async()=>{await call('StartAll');await reload()},'Workers started')}
-  async function stopAll(){await run(async()=>{await call('StopAll');await reload()},'Workers stopped')}
-  async function startType(id:string){await run(async()=>{await call('StartType',id);await reload()},'Worker started')}
-  async function stopType(id:string){await run(async()=>{await call('StopType',id);await reload()},'Worker stopped')}
+  async function startAll(){await run(async()=>{await call('StartAll');await reload()})}
+  async function stopAll(){await run(async()=>{await call('StopAll');await reload()})}
+  async function startType(id:string){await run(async()=>{await call('StartType',id);await reload()})}
+  async function stopType(id:string){await run(async()=>{await call('StopType',id);await reload()})}
 
   function newType(){ editingType={id:'',profileId:selectedProfileId,jobType:'',description:'',mode:'manual',activeScenarioId:null,maxActiveJobs:1} }
-  async function saveType(){if(!editingType)return;await run(async()=>{await call('SaveJobType',editingType);editingType=null;await reload()},'Job type saved')}
-  function requestDeleteType(type:JobType){confirmation={title:'Delete job type?',message:'Its response scenarios will also be deleted. Activation history will be preserved.',target:type.jobType,confirmLabel:'Delete job type',success:'Job type deleted',action:async()=>{await call('DeleteJobType',type.id);editingType=null;await reload()}}}
+  async function saveType(){if(!editingType)return;await run(async()=>{await call('SaveJobType',editingType);editingType=null;await reload()})}
+  function requestDeleteType(type:JobType){confirmation={title:'Delete job type?',message:'Its response scenarios will also be deleted. Activation history will be preserved.',target:type.jobType,confirmLabel:'Delete job type',action:async()=>{await call('DeleteJobType',type.id);editingType=null;await reload()}}}
   function newScenario(typeId:string){editingScenario={id:'',jobTypeConfigId:typeId,name:'',description:'',outcome:'success',variablesJson:'{}',delayMs:0,errorCode:'',errorMessage:'',remainingRetries:0,retryBackoffMs:0}}
-  async function saveScenario(){if(!editingScenario)return;await run(async()=>{await call('SaveScenario',editingScenario);editingScenario=null;await reload()},'Scenario saved')}
-  async function duplicateScenario(id:string){await run(async()=>{await call('DuplicateScenario',id);await reload()},'Scenario duplicated')}
-  function requestDeleteScenario(scenario:Scenario){confirmation={title:'Delete response?',message:'This response scenario will be removed from its job type.',target:scenario.name,confirmLabel:'Delete response',success:'Scenario deleted',action:async()=>{await call('DeleteScenario',scenario.id);editingScenario=null;await reload()}}}
+  async function saveScenario(){if(!editingScenario)return;await run(async()=>{await call('SaveScenario',editingScenario);editingScenario=null;await reload()})}
+  async function duplicateScenario(id:string){await run(async()=>{await call('DuplicateScenario',id);await reload()})}
+  function requestDeleteScenario(scenario:Scenario){confirmation={title:'Delete response?',message:'This response scenario will be removed from its job type.',target:scenario.name,confirmLabel:'Delete response',action:async()=>{await call('DeleteScenario',scenario.id);editingScenario=null;await reload()}}}
   let expandedPendingTasks:Record<string,boolean> = {}
   let savingWorkerIds:string[] = []
-  async function saveWorkerSelection(type:JobType, value:string, field:'mode'|'activeScenarioId', select?:HTMLSelectElement){
+  async function saveWorkerSelection(type:JobType, value:string, field:'mode'|'activeScenarioId'){
     if(savingWorkerIds.includes(type.id))return
     savingWorkerIds=[...savingWorkerIds,type.id]
     showError('')
@@ -136,15 +135,13 @@
     } catch(e:any) {
       showError(e?.message||String(e))
     } finally {
-      if(select)select.value=jobTypes.find(t=>t.id===type.id)?.[field]||''
       savingWorkerIds=savingWorkerIds.filter(id=>id!==type.id)
     }
   }
-  async function setMode(type:JobType, select:HTMLSelectElement){await saveWorkerSelection(type,select.value,'mode',select)}
   async function formatScenario(){if(!editingScenario)return;await run(async()=>{editingScenario!.variablesJson=await call('FormatJSON',editingScenario!.variablesJson)})}
 
-  async function submit(a:Activation){const d=drafts[a.id];await run(async()=>{await call('SaveDraft',a.id,d);await call('SubmitResponse',a.id,d);await reload()},'Response confirmed by Camunda')}
-  async function saveDraft(a:Activation){await run(async()=>{await call('SaveDraft',a.id,drafts[a.id])},'Draft saved')}
+  async function submit(a:Activation){const d=drafts[a.id];await run(async()=>{await call('SaveDraft',a.id,d);await call('SubmitResponse',a.id,d);await reload()})}
+  async function saveDraft(a:Activation){await run(async()=>{await call('SaveDraft',a.id,drafts[a.id])})}
   async function formatDraft(id:string){await run(async()=>{drafts[id].variablesJson=await call('FormatJSON',drafts[id].variablesJson)})}
   function draftFromScenario(s:Scenario):Draft {
     return {outcome:s.outcome,variablesJson:s.variablesJson,errorCode:s.errorCode,errorMessage:s.errorMessage,remainingRetries:s.remainingRetries,retryBackoffMs:s.retryBackoffMs}
@@ -188,8 +185,8 @@
     }
   }
   async function openHistory(a:Activation){selectedHistory=a;attempts=await call('Attempts',a.id)}
-  function requestClearHistory(){confirmation={title:'Clear completed history?',message:'Completed activation records for this profile will be deleted. Active records will be preserved.',confirmLabel:'Clear history',success:'History cleared',action:async()=>{await call('ClearHistory',selectedProfileId,true);await loadHistory(1)}}}
-  async function confirmAction(){const pending=confirmation;if(!pending)return;await run(async()=>{await pending.action();confirmation=null},pending.success)}
+  function requestClearHistory(){confirmation={title:'Clear completed history?',message:'Completed activation records for this profile will be deleted. Active records will be preserved.',confirmLabel:'Clear history',action:async()=>{await call('ClearHistory',selectedProfileId,true);await loadHistory(1)}}}
+  async function confirmAction(){const pending=confirmation;if(!pending)return;await run(async()=>{await pending.action();confirmation=null})}
 
   function authForProfile(profile:Profile|undefined):OperateAuth {return {mode:profile?.operateAuthMode||'none',username:profile?.operateUsername||'',password:profile?.operatePassword||'',token:profile?.operateToken||''}}
   function closeProfile(){editingProfile=null;editingOperateAuth=emptyOperateAuth()}
@@ -203,18 +200,17 @@
   }
   function requestDeleteProfile(profile:Profile){
     if(busy||startingProcess||profileDeletionReasons[profile.id])return
-    confirmation={title:'Delete connection profile?',message:'Its saved credentials, job types, and response scenarios will also be deleted. Activation history will remain in the local database, but will no longer be accessible through this profile. This cannot be undone.',target:profile.name,confirmLabel:'Delete profile',success:'Connection profile deleted',action:async()=>{await call('DeleteProfile',profile.id);await reload()}}
+    confirmation={title:'Delete connection profile?',message:'Its saved credentials, job types, and response scenarios will also be deleted. Activation history will remain in the local database, but will no longer be accessible through this profile. This cannot be undone.',target:profile.name,confirmLabel:'Delete profile',action:async()=>{await call('DeleteProfile',profile.id);await reload()}}
   }
-  async function saveProfile(){if(!editingProfile)return;await run(async()=>{const auth={...editingOperateAuth};const saved=await call<Profile>('SaveProfile',{...editingProfile,operateAuthMode:auth.mode,operateUsername:auth.username,operatePassword:auth.password,operateToken:auth.token});closeProfile();if(!selectedProfileId){selectedProfileId=saved.id;await call('SelectProfile',saved.id)};await reload();if(saved.id===selectedProfileId){processListRequest++;deployedProcesses=[];processesError='';processesLoaded=false;loadingProcesses=false;}},'Profile saved')}
+  async function saveProfile(){if(!editingProfile)return;await run(async()=>{const auth={...editingOperateAuth};const saved=await call<Profile>('SaveProfile',{...editingProfile,operateAuthMode:auth.mode,operateUsername:auth.username,operatePassword:auth.password,operateToken:auth.token});closeProfile();if(!selectedProfileId){selectedProfileId=saved.id;await call('SelectProfile',saved.id)};await reload();if(saved.id===selectedProfileId){processListRequest++;deployedProcesses=[];processesError='';processesLoaded=false;loadingProcesses=false;}})}
   async function openDataDirectory(){await run(async()=>{await call('OpenDataDirectory')})}
-  async function exportProfile(){await run(async()=>{await call('ExportProfileFile',selectedProfileId)},'Profile exported')}
-  async function importProfile(){await run(async()=>{await call('ImportProfileFile');await reload()},'Profile imported')}
+  async function exportProfile(){await run(async()=>{await call('ExportProfileFile',selectedProfileId)})}
+  async function importProfile(){await run(async()=>{await call('ImportProfileFile');await reload()})}
   async function checkForUpdates(manual=false){
     if(checkingForUpdates)return
     checkingForUpdates=true
     try {
       updateInfo=await call<UpdateInfo>('CheckForUpdates')
-      if(manual&&!updateInfo.updateAvailable)showNotice(`Camunda Stub Worker ${updateInfo.currentVersion} is up to date`)
     } catch(e:any) {
       if(manual)showError(e?.message||String(e))
     } finally {
@@ -223,19 +219,19 @@
   }
   async function openReleasesPage(){await call('OpenReleasesPage')}
 
-  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().then(()=>checkForUpdates()).catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(noticeTimer)window.clearTimeout(noticeTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
+  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().then(()=>checkForUpdates()).catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
 </script>
 
 {#snippet workerCard(task:ProcessTask, type:JobType|undefined, waiting:Activation[], cardKey:string, description='')}
             <article class="process-task">
               <div class="process-task-head">
                 <div class="process-task-identity"><div class="process-task-title"><h3>{task.name||task.id}</h3>{#if type&&!task.dynamic}<span class="status {rt(type.id).state}">{stateLabel(rt(type.id).state)}</span>{/if}</div>{#if task.jobType!==(task.name||task.id)}<code>{task.jobType}</code>{/if}</div>
-                {#if type&&!task.dynamic}<button class="icon-btn" aria-label={`Worker settings for ${task.name||task.id}`} title="Worker settings" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingType={...type}}><Ellipsis size={18}/></button>{/if}
+                {#if type&&!task.dynamic}<div class="process-task-header-controls"><div class="mode-switch" role="group" aria-label={`Mode for ${task.name||task.id}`}>{#each [{value:'manual',label:'Manual'},{value:'auto',label:'Automatic'}] as mode}<button type="button" aria-pressed={type.mode===mode.value} disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>{if(type.mode!==mode.value)void saveWorkerSelection(type,mode.value,'mode')}}>{mode.label}</button>{/each}</div><button class="icon-btn" aria-label={`Worker settings for ${task.name||task.id}`} title="Worker settings" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingType={...type}}><Ellipsis size={18}/></button></div>{/if}
               </div>
               {#if description}<p class="hint">{description}</p>{/if}
               {#if task.dynamic}<p class="hint">This job type is an expression resolved at runtime. Configure its resolved value in Job types.</p>
               {:else if type}
-                <div class="process-task-config"><label>Mode<select aria-label={`Mode for ${task.name||task.id}`} value={type.mode} disabled={busy||savingWorkerIds.includes(type.id)} on:change={(e)=>setMode(type,e.currentTarget)}><option value="manual">Manual</option><option value="auto">Automatic</option></select></label></div>
+
                 {#if rt(type.id).lastError}<div class="inline-error">{rt(type.id).lastError}</div>{/if}
                 <div class="worker-responses" role="group" aria-label={`Responses for ${task.name||task.id}`}><span class="responses-label">Responses</span>{#each scenarios.filter(s=>s.jobTypeConfigId===type.id) as response}<div class="response-choice" class:chosen={response.id===type.activeScenarioId}><button class="response-select" aria-pressed={response.id===type.activeScenarioId} title={`${response.name} · ${outcomeLabel(response.outcome)}`} aria-label={`Select ${response.name} · ${outcomeLabel(response.outcome)}`} disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>{if(type.activeScenarioId!==response.id)void saveWorkerSelection(type,response.id,'activeScenarioId')}}><span>{response.name}</span></button><button class="response-edit" aria-label={`Edit ${response.name}`} title="Edit response" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingScenario={...response}}><Pencil size={13}/></button></div>{/each}<button class="add-response" disabled={busy} on:click={()=>newScenario(type.id)}><Plus size={12}/> Add response</button></div>
               {:else}<div class="worker-responses"><span class="hint">No responses configured</span><button class="add-response" disabled={busy} on:click={()=>addTaskResponse(task)}><Plus size={12}/> Add response</button></div>{/if}
@@ -279,9 +275,8 @@
 
     {#if updateInfo?.updateAvailable}<div class="update-banner" role="status"><Download size={18}/><div><strong>Camunda Stub Worker {updateInfo.latestVersion} is available</strong><small>You are using {updateInfo.currentVersion}. Download the new release when convenient.</small></div><button class="secondary" on:click={openReleasesPage}>View release</button><button class="icon-btn" aria-label="Dismiss update notification" on:click={()=>updateInfo=null}><X size={17}/></button></div>{/if}
 
-    {#if error || notice}<div class="toast-region" aria-live="polite">
+    {#if error}<div class="toast-region" aria-live="polite">
       {#if error}<div class="toast error" role="alert"><span>{error}</span><button aria-label="Dismiss error" on:click={()=>showError('')}><X size={16}/></button></div>{/if}
-      {#if notice}<div class="toast success"><span>{notice}</span><button aria-label="Dismiss notification" on:click={()=>showNotice('')}><X size={16}/></button></div>{/if}
     </div>{/if}
 
     {#if tab==='types'}
@@ -342,7 +337,7 @@
       </section>
     {:else if tab==='history'}
       <section class="workspace"><div class="command-bar"><strong>{history.total||0} records</strong><button class="danger-text" on:click={requestClearHistory}>Clear completed</button></div>
-      <div class="filters"><input bind:value={historySearch} placeholder="Job key or process instance key" on:keydown={(e)=>e.key==='Enter'&&loadHistory(1)}/><select bind:value={historyType}><option value="">All job types</option>{#each jobTypes as t}<option value={t.jobType}>{t.jobType}</option>{/each}</select><select bind:value={historyOutcome}><option value="">All outcomes</option><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select><select bind:value={historyStatus}><option value="">All statuses</option><option value="confirmed">Confirmed</option><option value="failed">Failed</option><option value="unknown">Unknown</option><option value="prepared">Prepared</option></select><input aria-label="From date" title="From date" type="date" bind:value={historyFrom}/><input aria-label="To date" title="To date" type="date" bind:value={historyTo}/><button class="secondary" on:click={()=>loadHistory(1)}>Search</button></div>
+      <div class="filters"><div class="history-filter-main"><input aria-label="Job key or process instance key" bind:value={historySearch} placeholder="Job key or process instance key" on:keydown={(e)=>e.key==='Enter'&&loadHistory(1)}/><select aria-label="Job type filter" bind:value={historyType}><option value="">All job types</option>{#each jobTypes as t}<option value={t.jobType}>{t.jobType}</option>{/each}</select><select aria-label="Outcome filter" bind:value={historyOutcome}><option value="">All outcomes</option><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select><select aria-label="Status filter" bind:value={historyStatus}><option value="">All statuses</option><option value="confirmed">Confirmed</option><option value="failed">Failed</option><option value="unknown">Unknown</option><option value="prepared">Prepared</option></select></div><div class="history-filter-dates"><label>From<input aria-label="From date" type="date" bind:value={historyFrom}/></label><label>To<input aria-label="To date" type="date" bind:value={historyTo}/></label><button class="secondary" on:click={()=>loadHistory(1)}>Search</button></div></div>
       <div class="table-wrap"><table><thead><tr><th>Received</th><th>Job type</th><th>Job key</th><th>Process</th><th>Mode</th><th>Send status</th></tr></thead><tbody>{#each history.items as a}<tr on:click={()=>openHistory(a)}><td>{fmtDate(a.receivedAt)}</td><td><span class="pill">{a.jobType}</span></td><td><code>{a.jobKey}</code></td><td><code>{a.processInstanceKey}</code></td><td>{a.mode==='auto'?'Automatic':'Manual'}</td><td><span class="send {a.sendStatus}">{sendLabel(a.sendStatus)}</span></td></tr>{/each}</tbody></table>{#if !history.items?.length}<div class="table-empty">No records match these filters</div>{/if}</div>
       <div class="pagination"><span>Total: {history.total||0}</span><button aria-label="Previous page" disabled={historyPage<=1} on:click={()=>loadHistory(historyPage-1)}><ChevronLeft size={15}/></button><b>{historyPage}</b><button aria-label="Next page" disabled={historyPage*100>=history.total} on:click={()=>loadHistory(historyPage+1)}><ChevronRight size={15}/></button></div>
       </section>

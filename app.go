@@ -86,6 +86,9 @@ func (a *App) Bootstrap() (domain.Bootstrap, error) {
 	if err != nil {
 		return domain.Bootstrap{}, err
 	}
+	if err := a.store.EnsureDefaultResponses(ctx, id); err != nil {
+		return domain.Bootstrap{}, err
+	}
 	types, err := a.store.JobTypes(ctx, id)
 	if err != nil {
 		return domain.Bootstrap{}, err

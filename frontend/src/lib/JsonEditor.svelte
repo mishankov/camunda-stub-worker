@@ -28,13 +28,14 @@
     '&': {
       color: '#dfe2e3',
       backgroundColor: '#17191b',
-      border: '1px solid #3b4044',
-      borderRadius: '3px',
+      border: '1px solid var(--control-border)',
+      borderRadius: 'var(--control-radius)',
       fontSize: '14px'
     },
     '&.cm-focused': {
-      borderColor: '#669e98',
-      outline: '1px solid #669e98'
+      borderColor: 'var(--signal)',
+      outline: '2px solid var(--signal)',
+      outlineOffset: '2px'
     },
     '.cm-scroller': {
       minHeight: compact ? '150px' : '210px',

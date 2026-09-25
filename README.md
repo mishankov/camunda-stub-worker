@@ -27,7 +27,7 @@ Camunda Stub Worker preserves JSON as text end to end. Large integers such as Ze
 ## How it works
 
 1. Open **Processes**, the default screen, and select a deployed BPMN process and version.
-2. Review its worker tasks and add or edit response scenarios directly on each task.
+2. Review its worker tasks. Add response scenarios for automatic mode, or start in manual mode without saved responses.
 3. Choose **Automatic** mode with an active response, or **Manual** mode to review each job.
 4. Start the relevant workers, then select **Start process…** to enter variables and create an instance.
 5. Handle waiting jobs under each task, or use **Awaiting response** for all manual jobs. Review completed sends in **History**.
@@ -43,6 +43,8 @@ The task list comes from the selected BPMN definition in Operate, including task
 Automatic mode sends the active scenario as soon as a job is activated, after any delay configured on the scenario. It is useful for repeatable end-to-end flows, demos, and tests where the same response should be returned every time.
 
 ### Manual mode
+
+Manual workers can start without any saved response scenarios. In **Processes**, select **Start worker** on an unconfigured task, or **Start all**, to create and start manual workers for fixed job types. Existing workers keep their configured mode; automatic workers still require an active response.
 
 Manual mode places activated jobs under **Awaiting response**. You can inspect the input, select a saved scenario, and send the response when ready. Select **Custom** to edit response JSON for this job; JSON from a selected saved scenario is read-only. The scenario's automatic delay is not applied in manual mode.
 
@@ -86,8 +88,8 @@ xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
 2. Open Camunda Stub Worker. On first launch it creates a **Local Camunda** profile for `localhost:26500` and Camunda `8.5`.
 3. Select **Check connection**.
 4. Open **Job types** and add a job type that exactly matches the BPMN `zeebe:taskDefinition type`. Job types are case-sensitive.
-5. Add at least one response scenario.
-6. For an automatic worker, select its active scenario.
+5. Choose **Manual** to respond to each job without configuring a saved scenario, or add a response scenario for automatic mode.
+6. For an automatic worker, select its active scenario and choose **Automatic**.
 7. Deploy your BPMN model with Camunda Modeler or `zbctl`, then start the worker. To start an instance from the app, configure Operate as described below, open **Processes**, select the process and version, and select **Start process…** to enter JSON variables. Without Operate, start the instance with an external tool; the configured workers still handle its jobs.
 
 ### Start a process

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Release Camunda Stub Worker"
+  short_description: "Review docs, merge their PR, and publish a release"

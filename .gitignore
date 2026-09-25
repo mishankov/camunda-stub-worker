@@ -21,7 +21,10 @@ coverage.out
 .zed/
 
 # Local development-agent configuration
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/release-project/
 .codex/
 skills-lock.json
 

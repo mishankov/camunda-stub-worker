@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import { basicSetup } from 'codemirror'
-  import { EditorState } from '@codemirror/state'
+  import { Compartment, EditorState } from '@codemirror/state'
   import { EditorView } from '@codemirror/view'
   import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
   import { json, jsonParseLinter } from '@codemirror/lang-json'
@@ -11,6 +11,10 @@
   export let value = ''
   export let ariaLabel = 'JSON editor'
   export let compact = false
+  export let readOnly = false
+
+  const editability = new Compartment()
+  const accessMode = (locked:boolean) => [EditorState.readOnly.of(locked), EditorView.editable.of(!locked), EditorView.contentAttributes.of({ 'aria-readonly': String(locked), tabindex: '0' })]
 
   let host: HTMLDivElement
   let view: EditorView | null = null
@@ -81,6 +85,7 @@
         doc: value,
         extensions: [
           basicSetup,
+          editability.of(accessMode(readOnly)),
           json(),
           linter(jsonParseLinter()),
           syntaxHighlighting(jsonHighlighting),
@@ -100,6 +105,8 @@
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
     applyingExternalChange = false
   }
+
+  $: if (view) view.dispatch({ effects: editability.reconfigure(accessMode(readOnly)) })
 
   onDestroy(() => view?.destroy())
 </script>

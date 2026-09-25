@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { Boxes, Cable, Check, ChevronLeft, ChevronRight, Clock3, Download, Ellipsis, History, Pencil, Plus, Play, Square, Waypoints, X } from '@lucide/svelte'
+  import { Boxes, Cable, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Ellipsis, History, Pencil, Plus, Play, Square, Waypoints, X } from '@lucide/svelte'
   import { call, on } from './lib/api'
   import JsonEditor from './lib/JsonEditor.svelte'
   import Modal from './lib/Modal.svelte'
@@ -18,11 +18,11 @@
   let tab:'types'|'process'|'pending'|'history'|'settings' = 'process'
   type ProcessInstance = { bpmnProcessId:string; version:number; processDefinitionKey:string; processInstanceKey:string }
   type DeployedProcess = { bpmnProcessId:string; name:string; latestVersion:number; versions:{version:number;key:string}[] }
-  let deployedProcesses:DeployedProcess[] = [], loadingProcesses = false, processesLoaded = false, processesError = '', manualProcessId = false, processSourceKey = '', processListRequest = 0
+  let deployedProcesses:DeployedProcess[] = [], loadingProcesses = false, processesLoaded = false, processesError = '', processSourceKey = '', processListRequest = 0
   type ProcessTask = {id:string;name:string;jobType:string;dynamic:boolean}
   let processTasks:ProcessTask[] = [], tasksLoading = false, tasksError = '', tasksSource = '', tasksRequest = 0
   $: selectedProcess = deployedProcesses.find(p=>p.bpmnProcessId===processId)
-  $: selectedDefinition = !manualProcessId ? selectedProcess?.versions?.find(v=>v.version===(processVersion??selectedProcess.latestVersion)) : undefined
+  $: selectedDefinition = selectedProcess?.versions?.find(v=>v.version===(processVersion??selectedProcess.latestVersion))
   $: taskSource = selectedDefinition ? `${processSourceKey}|${processId}|${selectedDefinition.key}` : ''
   $: if(taskSource!==tasksSource) void loadTasks(taskSource, selectedDefinition?.key||'', processId)
   $: processPending = pending.filter(a=>a.bpmnProcessId===processId && (!selectedDefinition || a.processDefinitionKey===selectedDefinition.key))
@@ -41,7 +41,14 @@
       newScenario(type.id)
     })
   }
-  async function startProcessWorkers(){await run(async()=>{try{for(const type of processWorkers)if(rt(type.id).state!=='running')await call('StartType',type.id)}finally{await reload()}})}
+  async function stopProcessWorkers(){
+    const workers=processWorkers.filter(type=>rt(type.id).state==='running'||rt(type.id).state==='stopping')
+    await runWorkerCommand(workers.map(type=>type.id),async()=>{for(const type of workers)await call('StopType',type.id)})
+  }
+  async function startProcessWorkers(){
+    const workers=processWorkers.filter(type=>rt(type.id).state!=='running')
+    await runWorkerCommand(workers.map(type=>type.id),async()=>{for(const type of workers)await call('StartType',type.id)})
+  }
   type OperateAuth = { mode:'none'|'token'|'password'; token:string; username:string; password:string }
   const emptyOperateAuth = ():OperateAuth => ({mode:'none',token:'',username:'',password:''})
   let editingOperateAuth = emptyOperateAuth()
@@ -84,6 +91,9 @@
   const sendLabel = (v:string) => ({not_prepared:'Not prepared',prepared:'Response prepared',sending:'Sending',confirmed:'Confirmed by Camunda',failed:'Send failed',unknown:'Outcome unknown'} as any)[v] || v
   const stateLabel = (v:string) => ({stopped:'Stopped',running:'Running',stopping:'Stopping',error:'Error'} as any)[v] || v
   const rt = (id:string):RuntimeState => runtime.find(x=>x.configId===id) || {configId:id,state:'stopped',activeJobs:0,lastError:''}
+  $: allWorkersRunning = jobTypes.length>0 && jobTypes.every(type=>runtime.some(worker=>worker.configId===type.id&&worker.state==='running'))
+  $: hasActiveProcessWorkers = processWorkers.some(type=>runtime.some(worker=>worker.configId===type.id&&(worker.state==='running'||worker.state==='stopping')))
+  $: allProcessWorkersRunning = processWorkers.length>0 && processWorkers.every(type=>runtime.some(worker=>worker.configId===type.id&&worker.state==='running'))
   const scenarioName = (id:string|null) => scenarios.find(x=>x.id===id)?.name || 'Not selected'
   const fmtDate = (v:string) => v ? new Date(v).toLocaleString('en-US') : '—'
   const parseDraft = (a:Activation):Draft => { try { return JSON.parse(a.draftJson) } catch { return {outcome:'success',variablesJson:'{}',errorCode:'',errorMessage:'',remainingRetries:0,retryBackoffMs:0} } }
@@ -94,10 +104,16 @@
   async function run(fn:()=>Promise<any>) { showError(''); busy=true; try { await fn() } catch(e:any) { showError(e?.message || String(e)) } finally { busy=false } }
   async function reload() { const b = await call<any>('Bootstrap'); appVersion=b.appVersion||''; profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false }
   async function refreshLiveState() { if(refreshingLiveState)return;refreshingLiveState=true;try{const b=await call<any>('Bootstrap');runtime=b.runtime||[];connection=b.connection;pending=b.pending||[];for(const a of pending)if(!drafts[a.id]){drafts[a.id]=parseDraft(a);try{draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||''}catch{draftScenarios[a.id]=''}}}catch{}finally{refreshingLiveState=false} }
-  async function selectProfile() { await run(async()=>{ await call('SelectProfile',selectedProfileId); await reload() }) }
+  async function selectProfile(event:Event) {
+    const select=event.currentTarget as HTMLSelectElement
+    if(workerCommandIds.length){select.value=selectedProfileId;showError('Wait for the worker operation to finish before switching connections.');return}
+    const previous=selectedProfileId
+    selectedProfileId=select.value
+    await run(async()=>{try{await call('SelectProfile',selectedProfileId);await reload()}catch(e){selectedProfileId=previous;throw e}})
+  }
   async function checkConnection() { await run(async()=>{ connection=await call('CheckConnection') }) }
   function resetProcessSource(key:string){
-    tasksRequest++;tasksSource='';processTasks=[];tasksError='';tasksLoading=false;processResult=null;processError='';processSourceKey=key;processListRequest++;deployedProcesses=[];processesLoaded=false;loadingProcesses=false;processesError='';processId='';processVersion=undefined;manualProcessId=false
+    tasksRequest++;tasksSource='';processTasks=[];tasksError='';tasksLoading=false;processResult=null;processError='';processSourceKey=key;processListRequest++;deployedProcesses=[];processesLoaded=false;loadingProcesses=false;processesError='';processId='';processVersion=undefined
   }
   async function loadProcesses(){
     const profileId=selectedProfileId, request=++processListRequest
@@ -106,13 +122,13 @@
       const result=await call<DeployedProcess[]>('ListProcesses',profileId)
       if(request!==processListRequest)return
       deployedProcesses=result||[]
-      if(!manualProcessId&&!deployedProcesses.some(p=>p.bpmnProcessId===processId))processId=''
+      if(!deployedProcesses.some(p=>p.bpmnProcessId===processId))processId=''
       if(processVersion&&!deployedProcesses.find(p=>p.bpmnProcessId===processId)?.versions?.some(v=>v.version===processVersion))processVersion=undefined
     } catch(e:any) {if(request===processListRequest){deployedProcesses=[];processesError=e?.message||String(e)}}
     finally {if(request===processListRequest)loadingProcesses=false}
   }
   async function startProcess(){
-    if(startingProcess||busy)return
+    if(startingProcess||busy||!selectedDefinition)return
     startingProcess=true;processError='';processResult=null
     processResultProfile=currentProfile?.name||selectedProfileId
     try {
@@ -120,10 +136,17 @@
     } catch(e:any) { processError=e?.message||String(e) } finally { startingProcess=false }
   }
   async function formatProcessVariables(){if(busy||startingProcess)return;busy=true;processError='';const original=processVariables;try{const formatted=await call<string>('FormatJSON',original);if(processVariables===original)processVariables=formatted}catch(e:any){processError=e?.message||String(e)}finally{busy=false}}
-  async function startAll(){await run(async()=>{await call('StartAll');await reload()})}
-  async function stopAll(){await run(async()=>{await call('StopAll');await reload()})}
-  async function startType(id:string){await run(async()=>{await call('StartType',id);await reload()})}
-  async function stopType(id:string){await run(async()=>{await call('StopType',id);await reload()})}
+  let workerCommandIds:string[] = []
+  async function runWorkerCommand(ids:string[],action:()=>Promise<void>){
+    if(busy||ids.some(id=>workerCommandIds.includes(id)||savingWorkerIds.includes(id)))return
+    workerCommandIds=[...workerCommandIds,...ids];showError('')
+    try{await action()}catch(e:any){showError(e?.message||String(e))}
+    finally{workerCommandIds=workerCommandIds.filter(id=>!ids.includes(id))}
+  }
+  async function startAll(){await runWorkerCommand(jobTypes.map(type=>type.id),()=>call('StartAll'))}
+  async function stopAll(){await runWorkerCommand(jobTypes.map(type=>type.id),()=>call('StopAll'))}
+  async function startType(id:string){await runWorkerCommand([id],()=>call('StartType',id))}
+  async function stopType(id:string){await runWorkerCommand([id],()=>call('StopType',id))}
 
   function newType(){ editingType={id:'',profileId:selectedProfileId,jobType:'',description:'',mode:'manual',activeScenarioId:null,maxActiveJobs:1} }
   async function saveType(){const owner=editingType;if(!owner)return;await runModal(owner,'Saving…',async()=>{await call('SaveJobType',{...owner});await reload();if(editingType===owner)editingType=null})}
@@ -166,7 +189,7 @@
   }
   async function submit(a:Activation){const d={...drafts[a.id]};await pendingAction(a,'Sending…',async()=>{await call('SaveDraft',a.id,d);savedDrafts={...savedDrafts,[a.id]:JSON.stringify(d)};await call('SubmitResponse',a.id,d);await reload()})}
   async function saveDraft(a:Activation){const d={...drafts[a.id]};await pendingAction(a,'Saving…',async()=>{await call('SaveDraft',a.id,d);savedDrafts={...savedDrafts,[a.id]:JSON.stringify(d)}})}
-  async function formatDraft(a:Activation){const original=drafts[a.id].variablesJson;await pendingAction(a,'Formatting…',async()=>{const formatted=await call<string>('FormatJSON',original);if(drafts[a.id]?.variablesJson===original)drafts[a.id].variablesJson=formatted})}
+  async function formatDraft(a:Activation){if(draftScenarios[a.id])return;const original=drafts[a.id].variablesJson;await pendingAction(a,'Formatting…',async()=>{const formatted=await call<string>('FormatJSON',original);if(drafts[a.id]?.variablesJson===original)drafts[a.id].variablesJson=formatted})}
   function draftFromScenario(s:Scenario):Draft {
     return {outcome:s.outcome,variablesJson:s.variablesJson,errorCode:s.errorCode,errorMessage:s.errorMessage,remainingRetries:s.remainingRetries,retryBackoffMs:s.retryBackoffMs}
   }
@@ -256,21 +279,22 @@
 </script>
 
 {#snippet workerCard(task:ProcessTask, type:JobType|undefined, waiting:Activation[], cardKey:string, description='')}
+            {@const worker = runtime.find(state=>state.configId===type?.id) || {state:'stopped',lastError:''}}
             <article class="process-task">
               <div class="process-task-head">
-                <div class="process-task-identity"><div class="process-task-title"><h3>{task.name||task.id}</h3>{#if type&&!task.dynamic}<span class="status {rt(type.id).state}">{stateLabel(rt(type.id).state)}</span>{/if}</div>{#if task.jobType!==(task.name||task.id)}<code>{task.jobType}</code>{/if}</div>
+                <div class="process-task-identity"><div class="process-task-title"><h3>{task.name||task.id}</h3>{#if type&&!task.dynamic}<span class="status {worker.state}">{stateLabel(worker.state)}</span>{/if}</div>{#if task.jobType!==(task.name||task.id)}<code>{task.jobType}</code>{/if}</div>
                 {#if type&&!task.dynamic}<div class="process-task-header-controls"><div class="mode-switch" role="group" aria-label={`Mode for ${task.name||task.id}`}>{#each [{value:'manual',label:'Manual'},{value:'auto',label:'Automatic'}] as mode}<button type="button" aria-pressed={type.mode===mode.value} disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>{if(type.mode!==mode.value)void saveWorkerSelection(type,mode.value,'mode')}}>{mode.label}</button>{/each}</div><button class="icon-btn" aria-label={`Worker settings for ${task.name||task.id}`} title="Worker settings" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingType={...type}}><Ellipsis size={18}/></button></div>{/if}
               </div>
               {#if description}<p class="hint">{description}</p>{/if}
               {#if task.dynamic}<p class="hint">This job type is an expression resolved at runtime. Configure its resolved value in Job types.</p>
               {:else if type}
 
-                {#if rt(type.id).lastError}<div class="inline-error">{rt(type.id).lastError}</div>{/if}
+                {#if worker.lastError}<div class="inline-error">{worker.lastError}</div>{/if}
                 <div class="worker-responses" role="group" aria-label={`Responses for ${task.name||task.id}`}><span class="responses-label">Responses</span>{#each scenarios.filter(s=>s.jobTypeConfigId===type.id) as response}<div class="response-choice" class:chosen={response.id===type.activeScenarioId}><button class="response-select" aria-pressed={response.id===type.activeScenarioId} title={`${response.name} · ${outcomeLabel(response.outcome)}`} aria-label={`Select ${response.name} · ${outcomeLabel(response.outcome)}`} disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>{if(type.activeScenarioId!==response.id)void saveWorkerSelection(type,response.id,'activeScenarioId')}}><span>{response.name}</span></button><button class="response-edit" aria-label={`Edit ${response.name}`} title="Edit response" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingScenario={...response}}><Pencil size={13}/></button></div>{/each}<button class="add-response" disabled={busy} on:click={()=>newScenario(type.id)}><Plus size={12}/> Add response</button></div>
               {:else}<div class="worker-responses"><span class="hint">No responses configured</span><button class="add-response" disabled={busy} on:click={()=>addTaskResponse(task)}><Plus size={12}/> Add response</button></div>{/if}
               <div class="process-task-footer">
-                {#if waiting.length}<button class="link with-icon" aria-expanded={!!expandedPendingTasks[cardKey]} aria-controls={`pending-task-${cardKey}`} on:click={()=>expandedPendingTasks={...expandedPendingTasks,[cardKey]:!expandedPendingTasks[cardKey]}}><Clock3 size={14}/>{waiting.length} {waiting.length===1?'job':'jobs'} awaiting response</button>{:else}<span class="hint">No jobs awaiting response</span>{/if}
-                {#if type&&!task.dynamic}{#if rt(type.id).state==='running'||rt(type.id).state==='stopping'}<button class="ghost with-icon" disabled={busy} on:click={()=>stopType(type.id)}><Square size={12}/> Stop worker</button>{:else}<button class="ghost with-icon" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>startType(type.id)}><Play size={12}/> Start worker</button>{/if}{/if}
+                {#if waiting.length}<button class="pending-attention with-icon" aria-expanded={!!expandedPendingTasks[cardKey]} aria-controls={`pending-task-${cardKey}`} on:click={()=>expandedPendingTasks={...expandedPendingTasks,[cardKey]:!expandedPendingTasks[cardKey]}}><span class="pending-count">{waiting.length}</span><span>{waiting.length===1?'job':'jobs'} awaiting response</span><ChevronDown size={16} class="pending-chevron"/></button>{:else}<span class="hint">No jobs awaiting response</span>{/if}
+                {#if type&&!task.dynamic}{#if worker.state==='running'||worker.state==='stopping'}<button class="worker-stop with-icon" disabled={busy||workerCommandIds.includes(type.id)} on:click={()=>stopType(type.id)}><Square size={12}/> Stop worker</button>{:else}<button class="worker-start with-icon" disabled={busy||savingWorkerIds.includes(type.id)||workerCommandIds.includes(type.id)} on:click={()=>startType(type.id)}><Play size={12}/> Start worker</button>{/if}{/if}
               </div>
               {#if waiting.length}<div class="task-pending" id={`pending-task-${cardKey}`} hidden={!expandedPendingTasks[cardKey]}>{@render pendingQueue(waiting,cardKey,true)}</div>{/if}
             </article>
@@ -311,9 +335,9 @@
     <label>Outcome<select bind:value={drafts[a.id].outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label>
     {#if drafts[a.id].outcome==='business_error'}<div class="two"><label>Error code<input bind:value={drafts[a.id].errorCode}/></label><label>Error message<input bind:value={drafts[a.id].errorMessage}/></label></div>
     {:else if drafts[a.id].outcome==='technical_failure'}<label>Failure message<input bind:value={drafts[a.id].errorMessage}/></label><div class="two"><label>Retries remaining<input type="number" min="0" bind:value={drafts[a.id].remainingRetries}/></label><label>Retry delay, ms<input type="number" min="0" bind:value={drafts[a.id].retryBackoffMs}/></label></div><small class="hint">This is the retry count sent to Camunda, not a decrement. Reusing a positive value may cause repeated activations.</small>{/if}
-    <div class="editor-field-head"><span class="field-label">Response variables</span><button type="button" class="link" on:click={()=>formatDraft(a)}>Format JSON</button></div>
+    <div class="editor-field-head"><span class="field-label">Response variables</span><button type="button" class="link" disabled={!!draftScenarios[a.id]} on:click={()=>formatDraft(a)}>Format JSON</button></div>
   </fieldset>
-  <JsonEditor bind:value={drafts[a.id].variablesJson} ariaLabel={`Response variables for job ${a.jobKey}`} compact/>
+  <JsonEditor bind:value={drafts[a.id].variablesJson} ariaLabel={`Response variables for job ${a.jobKey}`} readOnly={!!draftScenarios[a.id]||!!pendingOperations[a.id]||busy||a.sendStatus==='sending'} compact/>
   <details class="pending-context"><summary>Job details</summary><dl><dt>Job key</dt><dd><code>{a.jobKey}</code></dd><dt>Process instance</dt><dd><code>{a.processInstanceKey}</code></dd><dt>BPMN task</dt><dd><code>{a.elementId}</code></dd><dt>Received</dt><dd>{fmtDate(a.receivedAt)}</dd></dl></details>
   {#if pendingErrors[a.id]}<div class="inline-error" role="alert">{pendingErrors[a.id]}</div>{/if}
   <div class="pending-editor-footer"><span class="hint" role="status">{draftStatus(a)}</span><button class="ghost" on:click={()=>saveDraft(a)} disabled={busy||!!pendingOperations[a.id]||a.sendStatus==='sending'}>{pendingOperations[a.id]==='Saving…'?'Saving…':'Save draft'}</button><button class="primary" on:click={()=>submit(a)} disabled={busy||!!pendingOperations[a.id]||a.sendStatus==='sending'}>{pendingOperations[a.id]==='Sending…'||a.sendStatus==='sending'?'Sending…':'Send to Camunda'}</button></div>
@@ -332,12 +356,12 @@
       <button class:active={tab==='history'} on:click={()=>{tab='history';loadHistory(1)}}><span><History size={18}/></span> History</button>
       <button class:active={tab==='settings'} on:click={()=>tab='settings'}><span><Cable size={18}/></span> Connections</button>
     </nav>
-    {#if appVersion}<div class="sidebar-version" aria-label="App version">Version {appVersion}</div>{/if}
+    {#if appVersion}<div class="sidebar-version" aria-label="App version">{appVersion}</div>{/if}
   </aside>
   <main>
     <header>
       <strong class="view-title">{currentViewLabel}</strong>
-      <div class="profile-select"><label for="profile-select">Profile</label><select id="profile-select" bind:value={selectedProfileId} on:change={selectProfile} disabled={busy||startingProcess}>{#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></div>
+      <div class="profile-select"><label for="profile-select">Profile</label><select id="profile-select" value={selectedProfileId} on:change={selectProfile} disabled={busy||startingProcess}>{#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></div>
       <div class="connection"><span class:ok={connection.state==='connected'} class:warn={connection.state==='version_mismatch'}></span><div><strong>{connection.state==='connected'?'Connected':connection.state==='version_mismatch'?'Versions differ':'Not connected'}</strong><small>{connection.detectedVersion ? `Server ${connection.detectedVersion} · selected ${connection.selectedVersion}` : `${profiles.find(p=>p.id===selectedProfileId)?.host}:${profiles.find(p=>p.id===selectedProfileId)?.port}`}</small></div></div>
       <button class="ghost" on:click={checkConnection} disabled={busy}>Check connection</button>
     </header>
@@ -350,7 +374,7 @@
 
     {#if tab==='types'}
       <section class="workspace">
-        <div class="command-bar"><strong>{jobTypes.length} {jobTypes.length===1?'job type':'job types'}</strong><div class="actions"><button class="secondary with-icon" on:click={newType}><Plus size={14}/> Add</button>{#if jobTypes.length>1}{#if jobTypes.some(x=>rt(x.id).state==='running'||rt(x.id).state==='stopping')}<button class="ghost with-icon" on:click={stopAll}><Square size={12}/> Stop all</button>{/if}<button class="ghost with-icon" on:click={startAll} disabled={busy}><Play size={12}/> Start all</button>{/if}</div></div>
+        <div class="command-bar"><strong>{jobTypes.length} {jobTypes.length===1?'job type':'job types'}</strong><div class="actions"><button class="secondary with-icon" on:click={newType}><Plus size={14}/> Add</button>{#if jobTypes.length>1}{#if jobTypes.some(type=>runtime.some(worker=>worker.configId===type.id&&(worker.state==='running'||worker.state==='stopping')))}<button class="worker-stop with-icon" on:click={stopAll} disabled={busy||workerCommandIds.length>0}><Square size={12}/> Stop all</button>{/if}{#if !allWorkersRunning}<button class="worker-start with-icon" on:click={startAll} disabled={busy||workerCommandIds.length>0}><Play size={12}/> Start all</button>{/if}{/if}</div></div>
         {#if !jobTypes.length}<div class="empty"><div><Boxes size={24} strokeWidth={1.5}/></div><h3>No job types</h3><p>Add the exact job type from your BPMN model, then define its responses.</p><button class="secondary with-icon" on:click={newType}><Plus size={14}/> Add job type</button></div>{/if}
         {#if jobTypes.length}<div class="process-tasks">
           {#each jobTypes as type (type.id)}
@@ -361,28 +385,33 @@
     {:else if tab==='process'}
       <section class="workspace">
         <div class="process-form">
-          <div class="process-overview-head"><div><h2>Choose a process</h2><p class="hint">Configure shared responses, handle waiting jobs, and start a process instance.</p></div><button type="button" class="primary with-icon" disabled={!processId.trim()} on:click={()=>{showProcessStart=true}}><Play size={14}/> {startingProcess?'Starting process…':processResult?'View last process result…':processError?'Review process error…':'Start process…'}</button></div>
+          <div class="process-overview-head"><div><h2>Choose a process</h2><p class="hint">Configure shared responses, handle waiting jobs, and start a process instance.</p></div></div>
+          {#if startingProcess}<p class="hint" role="status">Starting process…</p>{/if}
+          {#if processError&&!showProcessStart}<div class="inline-error" role="alert">Process could not be started: {processError}</div>{/if}
           <div class="two">
             <label>BPMN process ID
-              {#if currentProfile?.operateUrl && !manualProcessId}
-                <select bind:value={processId} required disabled={startingProcess||loadingProcesses} on:change={()=>processVersion=undefined}><option value="">{loadingProcesses?'Loading processes…':'Select a deployed process'}</option>{#each deployedProcesses as process}<option value={process.bpmnProcessId}>{process.name ? `${process.name} — ` : ''}{process.bpmnProcessId} (v{process.latestVersion})</option>{/each}</select>
-              {:else}<input bind:value={processId} placeholder="for example, order_process" required disabled={startingProcess}/>{/if}
+                <select bind:value={processId} required disabled={startingProcess||loadingProcesses||!currentProfile?.operateUrl} on:change={()=>processVersion=undefined}><option value="">{loadingProcesses?'Loading processes…':'Select a deployed process'}</option>{#each deployedProcesses as process}<option value={process.bpmnProcessId}>{process.name ? `${process.name} — ` : ''}{process.bpmnProcessId} (v{process.latestVersion})</option>{/each}</select>
             </label>
             <label>Version
-            {#if selectedProcess&&!manualProcessId}<select aria-label="Process version" bind:value={processVersion} disabled={startingProcess}><option value={undefined}>Latest (v{selectedProcess.latestVersion})</option>{#each selectedProcess.versions||[] as version}<option value={version.version}>Version {version.version}</option>{/each}</select>
-            {:else}<input type="number" min="1" max="2147483647" step="1" bind:value={processVersion} placeholder="Latest deployed version" disabled={startingProcess}/>{/if}</label>
+            {#if selectedProcess}<select aria-label="Process version" bind:value={processVersion} disabled={startingProcess}><option value={undefined}>Latest (v{selectedProcess.latestVersion})</option>{#each selectedProcess.versions||[] as version}<option value={version.version}>Version {version.version}</option>{/each}</select>
+            {:else}<select aria-label="Process version" disabled><option>Select a process first</option></select>{/if}</label>
+          </div>
+          <div class="process-selection-actions">
+            {#if currentProfile?.operateUrl}
+            <div class="actions"><button type="button" class="ghost" on:click={loadProcesses} disabled={loadingProcesses||startingProcess}>{loadingProcesses?'Loading…':'Refresh processes'}</button></div>
+            {/if}
+            <button type="button" class="worker-start with-icon" disabled={!selectedDefinition} on:click={()=>{if(!startingProcess){processResult=null;processError=''}showProcessStart=true}}><Play size={14}/> Start process…</button>
           </div>
           {#if currentProfile?.operateUrl}
-            <div class="actions"><button type="button" class="ghost" on:click={loadProcesses} disabled={loadingProcesses||startingProcess}>{loadingProcesses?'Loading…':'Refresh processes'}</button><button type="button" class="link" on:click={()=>manualProcessId=!manualProcessId} disabled={startingProcess}>{manualProcessId?'Choose from deployed processes':'Enter ID manually'}</button></div>
             <p class="hint">Uses the Operate authentication configured in <button type="button" class="link" on:click={editCurrentProfile}>connection settings</button>.</p>
-            {#if processesError}<div class="inline-error" role="alert">{processesError} You can still enter a process ID manually.</div>{:else if processesLoaded&&!loadingProcesses&&!deployedProcesses.length}<p class="hint">No deployed processes found in the default tenant. Recently deployed models may take a moment to appear in Operate.</p>{/if}
+            {#if processesError}<div class="inline-error" role="alert">{processesError} Check connection settings and refresh the process list.</div>{:else if processesLoaded&&!loadingProcesses&&!deployedProcesses.length}<p class="hint">No deployed processes found in the default tenant. Recently deployed models may take a moment to appear in Operate.</p>{/if}
           {:else}<p class="hint">To choose from deployed processes, <button type="button" class="link" on:click={editCurrentProfile}>set the Operate URL in your connection profile</button>.</p>{/if}
         </div>
         {#if processId}
-          <div class="command-bar process-task-heading"><div><strong>Worker tasks</strong><p class="hint">Responses, mode, and worker controls are shared by job type across this connection.</p></div><button class="ghost with-icon" disabled={busy||tasksLoading||!processWorkers.length} on:click={startProcessWorkers}><Play size={12}/> Start workers</button></div>
+          <div class="command-bar process-task-heading"><div><strong>Worker tasks</strong><p class="hint">Responses, mode, and worker controls are shared by job type across this connection.</p></div><div class="actions">{#if hasActiveProcessWorkers}<button class="worker-stop with-icon" disabled={busy||tasksLoading||processWorkers.some(type=>workerCommandIds.includes(type.id))} on:click={stopProcessWorkers}><Square size={12}/> Stop all</button>{/if}{#if !allProcessWorkersRunning}<button class="worker-start with-icon" disabled={busy||tasksLoading||!processWorkers.length||processWorkers.some(type=>workerCommandIds.includes(type.id))} on:click={startProcessWorkers}><Play size={12}/> Start workers</button>{/if}</div></div>
           {#if tasksLoading}<p class="hint" role="status">Loading BPMN tasks…</p>
           {:else if tasksError}<div class="inline-error" role="alert">{tasksError} <button class="link" on:click={()=>loadTasks(taskSource,selectedDefinition?.key||'',processId)}>Retry</button></div>
-          {:else if !selectedDefinition}<p class="hint">Select a deployed process to discover its tasks. You can still start a process by ID and configure responses in Job types.</p>
+          {:else if !selectedDefinition}<p class="hint">Select a deployed process version to discover its tasks.</p>
           {:else if !processTasks.length}<div class="table-empty">This process version has no worker tasks. Tasks inside called processes are configured separately.</div>
           {:else}
           <div class="process-tasks">
@@ -433,7 +462,7 @@
           {#if processError}<div class="inline-error" role="alert">{processError}</div>{/if}
           {#if processResult}<div class="process-result" role="status"><h3>Process started</h3><p>{processResultProfile} · {processResult.bpmnProcessId} · version {processResult.version}</p><dl><dt>Process instance key</dt><dd><code>{processResult.processInstanceKey}</code></dd><dt>Process definition key</dt><dd><code>{processResult.processDefinitionKey}</code></dd></dl></div>{/if}
 
-    <div class="modal-actions"><span></span><button type="button" class="ghost" on:click={()=>showProcessStart=false}>{processResult?'Close':'Cancel'}</button><button class="primary with-icon" disabled={busy||startingProcess||!processId.trim()}><Play size={14}/>{startingProcess?'Starting…':processResult?'Start another instance':'Start process'}</button></div>
+    <div class="modal-actions"><span></span><button type="button" class="ghost" on:click={()=>showProcessStart=false}>{processResult?'Close':'Cancel'}</button><button class="worker-start with-icon" disabled={busy||startingProcess||!selectedDefinition}><Play size={14}/>{startingProcess?'Starting…':processResult?'Start another instance':'Start process'}</button></div>
   </form>
 </Modal>
 {/if}

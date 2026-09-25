@@ -87,7 +87,7 @@ header { position: sticky; top: 0; z-index: 10; height: 56px; display: flex; ali
 
 .actions, .card-actions, .submit-row, .modal-actions, .stack { display: flex; align-items: center; gap: 8px; }
 
-.primary, .secondary, .ghost, .destructive {
+.primary, .secondary, .ghost, .destructive, .worker-start, .worker-stop {
   min-height: var(--control-height); padding: 6px 12px;
   color: var(--text); background: transparent; border: 1px solid var(--control-border);
   border-radius: var(--control-radius); font-size: var(--control-font-size); font-weight: 600;
@@ -316,7 +316,9 @@ tbody tr:hover { background: #202427; }
 
 
 .process-overview-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
-.process-overview-head > button { flex-shrink: 0; }
+.process-selection-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.process-selection-actions .actions { flex-wrap: wrap; }
+.process-selection-actions > button { margin-left: auto; flex-shrink: 0; }
 .process-task-head .actions { flex-wrap: wrap; }
 
 /* Shared form controls: identical metrics and states for every input type. */
@@ -393,3 +395,16 @@ select {
 @media (max-width: 1100px) { .pending-workspace { grid-template-columns: 180px minmax(0,1fr); } .pending-workspace { gap: 14px; } .pending-queue { padding-right: 12px; } .pending-response-fields .two { grid-template-columns: 1fr; } }
 
 .sidebar-version { margin-top: auto; padding: 12px 20px 0; border-top: 1px solid var(--rule-subtle); color: var(--muted); font-size: 12px; }
+
+
+.worker-start { color: var(--success-text); background: var(--success-background); border-color: var(--success); }
+.worker-start:hover:not(:disabled) { background: #294434; }
+.worker-start:active:not(:disabled) { background: #345540; }
+.worker-stop { color: var(--warning-text); background: #332a1c; border-color: var(--warning); }
+.worker-stop:hover:not(:disabled) { background: #483b26; }
+.worker-stop:active:not(:disabled) { background: #58472d; }
+
+.pending-attention { min-height: var(--control-height); padding: 4px 8px 4px 0; border: 0; border-radius: var(--control-radius); color: var(--warning-text); background: transparent; font-size: 13px; font-weight: 600; gap: 9px; }
+.pending-attention:hover { background: var(--raised); }
+.pending-count { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 7px; border-radius: var(--control-radius); color: var(--warning-text); background: #332a1c; font-variant-numeric: tabular-nums; }
+.pending-attention[aria-expanded="true"] .pending-chevron { transform: rotate(180deg); }

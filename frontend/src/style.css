@@ -57,12 +57,12 @@ button:disabled, input:disabled, textarea:disabled, select:disabled { opacity: v
 button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 220px 1fr; }
-aside { position: fixed; inset: 0 auto 0 0; width: 220px; padding: 0 10px 12px; display: flex; flex-direction: column; background: var(--surface-inset); border-right: 1px solid var(--rule-subtle); }
-.brand { height: 56px; display: flex; align-items: center; gap: 9px; padding: 0 10px; color: var(--text-secondary); border-bottom: 1px solid var(--rule-subtle); }
+aside { position: fixed; inset: 0 auto 0 0; width: 220px; padding: 0 0 12px; display: flex; flex-direction: column; background: var(--surface-inset); border-right: 1px solid var(--rule-subtle); }
+.brand { height: 56px; display: flex; align-items: center; gap: 9px; padding: 0 20px; color: var(--text-secondary); border-bottom: 1px solid var(--rule-subtle); }
 .brand svg { color: var(--muted); }
 .brand strong { font-size: 15px; font-weight: 600; }
 
-nav { display: grid; gap: 1px; margin-top: 10px; }
+nav { display: grid; gap: 1px; margin: 10px 10px 0; }
 nav button { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; color: var(--text-secondary); background: transparent; border: 0; border-radius: 3px; text-align: left; font-size: 14px; font-weight: 500; white-space: nowrap; }
 nav button span { width: 17px; display: grid; place-items: center; color: var(--muted); }
 nav button b { min-width: 20px; margin-left: auto; padding: 0 5px; color: var(--text-secondary); background: var(--raised); border-radius: 9px; font: 12px var(--mono); text-align: center; }
@@ -70,11 +70,6 @@ nav button:hover { color: var(--text); background: var(--surface-overlay); }
 nav button.active { color: var(--text); background: var(--surface-selected); }
 nav button.active span { color: var(--text-secondary); }
 
-.sidebar-note { margin-top: auto; padding: 11px 9px 0; display: grid; grid-template-columns: 7px 1fr; gap: 8px; border-top: 1px solid var(--rule-subtle); }
-.sidebar-note i { width: 7px; height: 7px; margin-top: 4px; background: var(--status-neutral); border-radius: 50%; }
-.sidebar-note strong, .sidebar-note small { display: block; }
-.sidebar-note strong { font-size: 13px; font-weight: 600; }
-.sidebar-note small { max-width: 170px; margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 11px; line-height: 1.4; text-overflow: ellipsis; }
 
 main { grid-column: 2; min-width: 0; }
 header { position: sticky; top: 0; z-index: 10; height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 24px; background: var(--surface-inset); border-bottom: 1px solid var(--rule-subtle); }
@@ -84,8 +79,8 @@ header { position: sticky; top: 0; z-index: 10; height: 56px; display: flex; ali
 .profile-select select { min-width: 190px; }
 .connection { display: flex; align-items: center; gap: 8px; }
 .connection > span { width: 7px; height: 7px; background: var(--status-neutral); border-radius: 50%; }
-.connection > span.ok, .sidebar-note i.ok { background: var(--success); }
-.connection > span.warn, .sidebar-note i.warn { background: var(--warning); }
+.connection > span.ok { background: var(--success); }
+.connection > span.warn { background: var(--warning); }
 .connection strong, .connection small { display: block; }
 .connection strong { font-size: 13px; font-weight: 600; }
 .connection small { margin-top: 1px; color: var(--muted); font: 11px var(--mono); }
@@ -396,3 +391,5 @@ select {
 .pending-editor-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--rule); }
 .pending-editor-footer > span { margin-right: auto; }
 @media (max-width: 1100px) { .pending-workspace { grid-template-columns: 180px minmax(0,1fr); } .pending-workspace { gap: 14px; } .pending-queue { padding-right: 12px; } .pending-response-fields .two { grid-template-columns: 1fr; } }
+
+.sidebar-version { margin-top: auto; padding: 12px 20px 0; border-top: 1px solid var(--rule-subtle); color: var(--muted); font-size: 12px; }

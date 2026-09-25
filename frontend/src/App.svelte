@@ -48,6 +48,7 @@
   let processId = '', processVersion:number|undefined, processVariables = '{}'
   let showProcessStart = false
   let startingProcess = false, processError = '', processResult:ProcessInstance|null = null, processResultProfile = ''
+  let appVersion = ''
   let loading = true, busy = false, error = ''
   let errorTimer:number|undefined
   let profiles:Profile[] = [], selectedProfileId = '', jobTypes:JobType[] = [], scenarios:Scenario[] = [], runtime:RuntimeState[] = [], pending:Activation[] = []
@@ -91,7 +92,7 @@
   function showError(message:string) { error=message; if(errorTimer)window.clearTimeout(errorTimer);errorTimer=message?window.setTimeout(()=>{error='';errorTimer=undefined},notificationDurationMs):undefined }
 
   async function run(fn:()=>Promise<any>) { showError(''); busy=true; try { await fn() } catch(e:any) { showError(e?.message || String(e)) } finally { busy=false } }
-  async function reload() { const b = await call<any>('Bootstrap'); profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false }
+  async function reload() { const b = await call<any>('Bootstrap'); appVersion=b.appVersion||''; profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false }
   async function refreshLiveState() { if(refreshingLiveState)return;refreshingLiveState=true;try{const b=await call<any>('Bootstrap');runtime=b.runtime||[];connection=b.connection;pending=b.pending||[];for(const a of pending)if(!drafts[a.id]){drafts[a.id]=parseDraft(a);try{draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||''}catch{draftScenarios[a.id]=''}}}catch{}finally{refreshingLiveState=false} }
   async function selectProfile() { await run(async()=>{ await call('SelectProfile',selectedProfileId); await reload() }) }
   async function checkConnection() { await run(async()=>{ connection=await call('CheckConnection') }) }
@@ -331,7 +332,7 @@
       <button class:active={tab==='history'} on:click={()=>{tab='history';loadHistory(1)}}><span><History size={18}/></span> History</button>
       <button class:active={tab==='settings'} on:click={()=>tab='settings'}><span><Cable size={18}/></span> Connections</button>
     </nav>
-    <div class="sidebar-note"><i class:ok={connection.state==='connected'} class:warn={connection.state==='version_mismatch'}></i><div><strong>{connection.state==='connected'?'Camunda available':connection.state==='version_mismatch'?'Versions differ':'No connection'}</strong><small>{connection.message}</small></div></div>
+    {#if appVersion}<div class="sidebar-version" aria-label="App version">Version {appVersion}</div>{/if}
   </aside>
   <main>
     <header>

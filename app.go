@@ -101,7 +101,7 @@ func (a *App) Bootstrap() (domain.Bootstrap, error) {
 	if err != nil {
 		return domain.Bootstrap{}, err
 	}
-	return domain.Bootstrap{Profiles: profiles, SelectedProfileID: id, JobTypes: types, Scenarios: scenarios, Runtime: a.manager.States(), Connection: a.manager.Connection(), Pending: pending, DataPath: a.store.Path()}, nil
+	return domain.Bootstrap{AppVersion: version, Profiles: profiles, SelectedProfileID: id, JobTypes: types, Scenarios: scenarios, Runtime: a.manager.States(), Connection: a.manager.Connection(), Pending: pending, DataPath: a.store.Path()}, nil
 }
 func (a *App) CheckConnection() (domain.ConnectionStatus, error) {
 	return a.manager.ConnectCheck(context.Background())

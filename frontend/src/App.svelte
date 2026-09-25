@@ -34,20 +34,35 @@
     catch(e:any){if(request===tasksRequest)tasksError=e?.message||String(e)}
     finally {if(request===tasksRequest)tasksLoading=false}
   }
+  async function ensureTaskWorker(task:ProcessTask){
+    let type=jobTypes.find(t=>t.jobType===task.jobType)
+    if(!type){
+      type=await call<JobType>('SaveJobType',{id:'',profileId:selectedProfileId,jobType:task.jobType,description:'',mode:'manual',activeScenarioId:null,maxActiveJobs:1})
+      jobTypes=[...jobTypes,type]
+    }
+    return type
+  }
   async function addTaskResponse(task:ProcessTask){
-    await run(async()=>{
-      let type=jobTypes.find(t=>t.jobType===task.jobType)
-      if(!type){type=await call<JobType>('SaveJobType',{id:'',profileId:selectedProfileId,jobType:task.jobType,description:'',mode:'manual',activeScenarioId:null,maxActiveJobs:1});await reload()}
-      newScenario(type.id)
-    })
+    if(busy)return
+    await run(async()=>{const type=await ensureTaskWorker(task);newScenario(type.id)})
+  }
+  async function startTaskWorker(task:ProcessTask){
+    if(busy)return
+    await run(async()=>{const type=await ensureTaskWorker(task);await call('StartType',type.id)})
   }
   async function stopProcessWorkers(){
     const workers=processWorkers.filter(type=>rt(type.id).state==='running'||rt(type.id).state==='stopping')
     await runWorkerCommand(workers.map(type=>type.id),async()=>{for(const type of workers)await call('StopType',type.id)})
   }
   async function startProcessWorkers(){
-    const workers=processWorkers.filter(type=>rt(type.id).state!=='running')
-    await runWorkerCommand(workers.map(type=>type.id),async()=>{for(const type of workers)await call('StartType',type.id)})
+    if(busy||processWorkers.some(type=>workerCommandIds.includes(type.id)||savingWorkerIds.includes(type.id)))return
+    const tasks=[...new Map(processTasks.filter(task=>!task.dynamic).map(task=>[task.jobType,task])).values()]
+    await run(async()=>{
+      for(const task of tasks){
+        const type=await ensureTaskWorker(task)
+        if(rt(type.id).state!=='running')await call('StartType',type.id)
+      }
+    })
   }
   type OperateAuth = { mode:'none'|'token'|'password'; token:string; username:string; password:string }
   const emptyOperateAuth = ():OperateAuth => ({mode:'none',token:'',username:'',password:''})
@@ -93,7 +108,7 @@
   const rt = (id:string):RuntimeState => runtime.find(x=>x.configId===id) || {configId:id,state:'stopped',activeJobs:0,lastError:''}
   $: allWorkersRunning = jobTypes.length>0 && jobTypes.every(type=>runtime.some(worker=>worker.configId===type.id&&worker.state==='running'))
   $: hasActiveProcessWorkers = processWorkers.some(type=>runtime.some(worker=>worker.configId===type.id&&(worker.state==='running'||worker.state==='stopping')))
-  $: allProcessWorkersRunning = processWorkers.length>0 && processWorkers.every(type=>runtime.some(worker=>worker.configId===type.id&&worker.state==='running'))
+  $: allProcessWorkersRunning = processWorkers.length>0 && processTasks.filter(task=>!task.dynamic).every(task=>processWorkers.some(type=>type.jobType===task.jobType&&runtime.some(worker=>worker.configId===type.id&&worker.state==='running')))
   const scenarioName = (id:string|null) => scenarios.find(x=>x.id===id)?.name || 'Not selected'
   const fmtDate = (v:string) => v ? new Date(v).toLocaleString('en-US') : '—'
   const parseDraft = (a:Activation):Draft => { try { return JSON.parse(a.draftJson) } catch { return {outcome:'success',variablesJson:'{}',errorCode:'',errorMessage:'',remainingRetries:0,retryBackoffMs:0} } }
@@ -283,7 +298,7 @@
             <article class="process-task">
               <div class="process-task-head">
                 <div class="process-task-identity"><div class="process-task-title"><h3>{task.name||task.id}</h3>{#if type&&!task.dynamic}<span class="status {worker.state}">{stateLabel(worker.state)}</span>{/if}</div>{#if task.jobType!==(task.name||task.id)}<code>{task.jobType}</code>{/if}</div>
-                {#if type&&!task.dynamic}<div class="process-task-header-controls"><div class="mode-switch" role="group" aria-label={`Mode for ${task.name||task.id}`}>{#each [{value:'manual',label:'Manual'},{value:'auto',label:'Automatic'}] as mode}<button type="button" aria-pressed={type.mode===mode.value} disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>{if(type.mode!==mode.value)void saveWorkerSelection(type,mode.value,'mode')}}>{mode.label}</button>{/each}</div><button class="icon-btn" aria-label={`Worker settings for ${task.name||task.id}`} title="Worker settings" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingType={...type}}><Ellipsis size={18}/></button></div>{/if}
+                {#if !task.dynamic}<div class="process-task-header-controls"><div class="mode-switch" role="group" aria-label={`Mode for ${task.name||task.id}`}>{#each [{value:'manual',label:'Manual'},{value:'auto',label:'Automatic'}] as mode}<button type="button" aria-pressed={(type?.mode||'manual')===mode.value} disabled={busy||!!type&&savingWorkerIds.includes(type.id)} on:click={()=>{if(type){if(type.mode!==mode.value)void saveWorkerSelection(type,mode.value,'mode')}else if(mode.value==='auto'){showError('Add and select a response before switching to Automatic mode.')}}}>{mode.label}</button>{/each}</div>{#if type}<button class="icon-btn" aria-label={`Worker settings for ${task.name||task.id}`} title="Worker settings" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>editingType={...type}}><Ellipsis size={18}/></button>{/if}</div>{/if}
               </div>
               {#if description}<p class="hint">{description}</p>{/if}
               {#if task.dynamic}<p class="hint">This job type is an expression resolved at runtime. Configure its resolved value in Job types.</p>
@@ -294,7 +309,7 @@
               {:else}<div class="worker-responses"><span class="hint">No responses configured</span><button class="add-response" disabled={busy} on:click={()=>addTaskResponse(task)}><Plus size={12}/> Add response</button></div>{/if}
               <div class="process-task-footer">
                 {#if waiting.length}<button class="pending-attention with-icon" aria-expanded={!!expandedPendingTasks[cardKey]} aria-controls={`pending-task-${cardKey}`} on:click={()=>expandedPendingTasks={...expandedPendingTasks,[cardKey]:!expandedPendingTasks[cardKey]}}><span class="pending-count">{waiting.length}</span><span>{waiting.length===1?'job':'jobs'} awaiting response</span><ChevronDown size={16} class="pending-chevron"/></button>{:else}<span class="hint">No jobs awaiting response</span>{/if}
-                {#if type&&!task.dynamic}{#if worker.state==='running'||worker.state==='stopping'}<button class="worker-stop with-icon" disabled={busy||workerCommandIds.includes(type.id)} on:click={()=>stopType(type.id)}><Square size={12}/> Stop worker</button>{:else}<button class="worker-start with-icon" disabled={busy||savingWorkerIds.includes(type.id)||workerCommandIds.includes(type.id)} on:click={()=>startType(type.id)}><Play size={12}/> Start worker</button>{/if}{/if}
+                {#if type&&!task.dynamic}{#if worker.state==='running'||worker.state==='stopping'}<button class="worker-stop with-icon" disabled={busy||workerCommandIds.includes(type.id)} on:click={()=>stopType(type.id)}><Square size={12}/> Stop worker</button>{:else}<button class="worker-start with-icon" disabled={busy||savingWorkerIds.includes(type.id)||workerCommandIds.includes(type.id)} on:click={()=>startType(type.id)}><Play size={12}/> Start worker</button>{/if}{:else if !task.dynamic}<button class="worker-start with-icon" disabled={busy} on:click={()=>startTaskWorker(task)}><Play size={12}/> Start worker</button>{/if}
               </div>
               {#if waiting.length}<div class="task-pending" id={`pending-task-${cardKey}`} hidden={!expandedPendingTasks[cardKey]}>{@render pendingQueue(waiting,cardKey,true)}</div>{/if}
             </article>
@@ -408,7 +423,7 @@
           {:else}<p class="hint">To choose from deployed processes, <button type="button" class="link" on:click={editCurrentProfile}>set the Operate URL in your connection profile</button>.</p>{/if}
         </div>
         {#if processId}
-          <div class="command-bar process-task-heading"><div><strong>Worker tasks</strong><p class="hint">Responses, mode, and worker controls are shared by job type across this connection.</p></div><div class="actions">{#if hasActiveProcessWorkers}<button class="worker-stop with-icon" disabled={busy||tasksLoading||processWorkers.some(type=>workerCommandIds.includes(type.id))} on:click={stopProcessWorkers}><Square size={12}/> Stop all</button>{/if}{#if !allProcessWorkersRunning}<button class="worker-start with-icon" disabled={busy||tasksLoading||!processWorkers.length||processWorkers.some(type=>workerCommandIds.includes(type.id))} on:click={startProcessWorkers}><Play size={12}/> Start all</button>{/if}</div></div>
+          <div class="command-bar process-task-heading"><div><strong>Worker tasks</strong><p class="hint">Responses, mode, and worker controls are shared by job type across this connection.</p></div><div class="actions">{#if hasActiveProcessWorkers}<button class="worker-stop with-icon" disabled={busy||tasksLoading||processWorkers.some(type=>workerCommandIds.includes(type.id))} on:click={stopProcessWorkers}><Square size={12}/> Stop all</button>{/if}{#if !allProcessWorkersRunning}<button class="worker-start with-icon" disabled={busy||tasksLoading||!processTasks.some(task=>!task.dynamic)||processWorkers.some(type=>workerCommandIds.includes(type.id)||savingWorkerIds.includes(type.id))} on:click={startProcessWorkers}><Play size={12}/> Start all</button>{/if}</div></div>
           {#if tasksLoading}<p class="hint" role="status">Loading BPMN tasks…</p>
           {:else if tasksError}<div class="inline-error" role="alert">{tasksError} <button class="link" on:click={()=>loadTasks(taskSource,selectedDefinition?.key||'',processId)}>Retry</button></div>
           {:else if !selectedDefinition}<p class="hint">Select a deployed process version to discover its tasks.</p>

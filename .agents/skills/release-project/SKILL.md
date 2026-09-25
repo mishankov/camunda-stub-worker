@@ -7,8 +7,9 @@ description: Prepare a Camunda Stub Worker minor or patch release by checking RE
 
 Use this workflow when asked to release this project. Creating or editing this skill does not itself request a release. Honor a request limited to preparation or documentation review.
 
-## Establish the release
+## 0. Pull latest main and establish the release
 
+- First, synchronize the release source with `origin/main` before auditing documentation or choosing a version. Read applicable repository instructions and inspect the working tree, then switch to `main` and run `git pull --ff-only origin main`. Preserve unrelated local work; if switching or pulling would disturb it, fetch `origin/main` and use an isolated worktree based on that ref instead. Do not reset, discard, or automatically stash the user's changes. If local `main` has diverged or contains unpublished commits, use the remote-based worktree rather than including those commits in the release.
 - Read applicable repository instructions, inspect the working tree, and confirm the GitHub repository and default branch from the remote. The current repository is `mishankov/camunda-stub-worker`, with default branch `main`; verify these rather than assuming they never change. Use authenticated `gh` or an available GitHub connector.
 - Preserve unrelated local work. Prepare a `codex/release-docs-<version>` branch from the current remote default branch, using an isolated worktree when needed.
 - Take `minor` or `patch` from the user's request. If missing, ask which while continuing the documentation audit; do not infer it from the size of the diff.

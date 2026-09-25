@@ -24,20 +24,20 @@
         </div>
         <p class="platforms">macOS · Windows · Linux</p>
       </section>
-      <img class="screenshot" src="assets/job-types.jpg" width="1280" height="820" alt="Job types with automatic and manual workers and success, business-error, and technical-failure scenarios">
+      <img class="screenshot" src="assets/processes.jpg" width="1280" height="900" alt="Processes screen with shared responses for payment and inventory worker tasks">
       <div class="features">
         <p><strong>Choose the outcome.</strong> Return success, throw a business error, or simulate a technical failure.</p>
         <p><strong>Control the response.</strong> Run automatically or inspect and respond to jobs manually.</p>
-        <p><strong>Start from the app.</strong> Pick a deployed process from Operate or enter its ID, then supply a version and JSON variables.</p>
+        <p><strong>Start from the app.</strong> Pick a deployed process and version from Operate, configure its worker responses, then supply JSON variables.</p>
       </div>
       <section class="feature-section" aria-labelledby="start-title">
         <h2 id="start-title">From deployment to process instance.</h2>
-        <p>Browse deployed processes through the Operate API, refresh after deploying a new model, or enter a BPMN process ID manually. Choose a specific version or use the latest, add JSON variables, and get the new instance key.</p>
-        <figure><img class="screenshot" src="assets/start-process.jpg" width="1280" height="820" loading="lazy" alt="Start process screen showing Order fulfillment, input variables, and the created instance key"><figcaption>Start a process and see the instance confirmed by Camunda.</figcaption></figure>
+        <p>Browse deployed processes through the Operate API and refresh after deploying a new model. Choose a version, configure shared responses on its worker tasks, then open Start process to add JSON variables and get the new instance key. In-app process start requires Operate; without it, configure Job types and start instances with an external tool.</p>
+        <figure><img class="screenshot" src="assets/start-process.jpg" width="1280" height="820" loading="lazy" alt="Start process dialog showing Order fulfillment, input variables, and the created instance key"><figcaption>Start a process and see the instance confirmed by Camunda.</figcaption></figure>
       </section>
       <section class="feature-section" aria-labelledby="manual-title">
         <h2 id="manual-title">Inspect a job before you respond.</h2>
-        <p>Review input variables, choose a response scenario, and edit the JSON before sending it. Switch to automatic mode for repeatable test runs, then review response attempts in History.</p>
+        <p>Review input variables and choose a saved response, or select Custom to edit response JSON before sending it. Switch to automatic mode for repeatable test runs, then review response attempts in History.</p>
         <figure><img class="screenshot" src="assets/manual-response.jpg" width="1280" height="820" loading="lazy" alt="Awaiting response screen with order variables and an editable inventory response"><figcaption>Manual responses let you control the next step in your process.</figcaption></figure>
       </section>
       <section class="feature-section" aria-labelledby="connections-title">
@@ -46,8 +46,8 @@
         <figure><img class="screenshot" src="assets/connections.jpg" width="1280" height="1100" loading="lazy" alt="Connection editor with local Zeebe and Operate addresses and masked password authentication"><figcaption>Local defaults: Zeebe on port 26500, Operate on port 8081, and demo / demo for Operate login.</figcaption></figure>
         <p class="note">Configuration and history stay on your computer. Saved passwords and tokens are stored in plaintext in the local SQLite database and omitted from profile exports.</p>
       </section>
-      <p class="note">Screenshots show the current app UI with illustrative sample data.</p>
-      <p class="compatibility">For local Zeebe connections; verified with 8.5.25. Operate v1 is optional and must connect to the same cluster. Deploy BPMN models with an external tool. Builds are unsigned. See <a href="https://github.com/mishankov/camunda-stub-worker#install">installation and requirements</a>.</p>
+      <p class="note">Screenshots show the current frontend with isolated sample data and simulated backend responses.</p>
+      <p class="compatibility">For local Zeebe connections; verified with 8.5.25. Operate v1 is required for the Processes screen and must connect to the same cluster; standalone workers do not require it. Deploy BPMN models with an external tool. Builds are unsigned. See <a href="https://github.com/mishankov/camunda-stub-worker#install">installation and requirements</a>.</p>
     </main>
     <footer class="wrap">Camunda Stub Worker</footer>
   </body>

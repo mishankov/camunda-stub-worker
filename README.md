@@ -1,17 +1,17 @@
 # Camunda Stub Worker
 
-Camunda Stub Worker is a desktop app for testing Camunda 8 processes without building every external worker first. Connect to local Zeebe, start a deployed process, and choose how its jobs should respond. Connect Operate to pick deployed processes from a dropdown.
+Camunda Stub Worker is a desktop app for testing Camunda 8 processes without building every external worker first. Connect to local Zeebe, start a deployed process, and choose how its jobs should respond. Connect Operate to select deployed processes, configure their worker tasks, and start instances.
 
 Use it to explore happy paths, business errors, and technical failures while developing or demonstrating a process. No code is required to create or switch responses.
 
 [Download the latest release](https://github.com/mishankov/camunda-stub-worker/releases/latest)
 
-![Job types and their configured response scenarios](docs/images/job-types.jpg)
+![Process worker tasks and their shared response scenarios](docs/images/processes.jpg)
 
 ## What you can do
 
-- **Start deployed processes** with a BPMN process ID, optional version, and JSON variables.
-- **Browse deployed processes** through the Operate API, with refresh and manual ID entry.
+- **Start deployed processes** with a version and JSON variables.
+- **Browse deployed processes** through the Operate API, with refresh and version selection.
 - **Stub multiple job types** from one desktop app.
 - **Create reusable responses** for success, BPMN business errors, and technical failures.
 - **Run automatically** with a selected response and optional delay.
@@ -36,13 +36,15 @@ Responses and worker settings are shared by job type within a connection. Editin
 
 The task list comes from the selected BPMN definition in Operate, including tasks in embedded subprocesses. Called processes are configured separately. Expression-based job types are shown but must be configured by their resolved value in **Job types**. Pending jobs are manual jobs activated by this app, filtered to the selected process definition version.
 
+![Job types and their configured response scenarios](docs/images/job-types.jpg)
+
 ### Automatic mode
 
 Automatic mode sends the active scenario as soon as a job is activated, after any delay configured on the scenario. It is useful for repeatable end-to-end flows, demos, and tests where the same response should be returned every time.
 
 ### Manual mode
 
-Manual mode places activated jobs under **Awaiting response**. You can inspect the input, select a scenario, edit its local copy, and send the response when ready. The scenario's automatic delay is not applied in manual mode.
+Manual mode places activated jobs under **Awaiting response**. You can inspect the input, select a saved scenario, and send the response when ready. Select **Custom** to edit response JSON for this job; JSON from a selected saved scenario is read-only. The scenario's automatic delay is not applied in manual mode.
 
 ![Reviewing and preparing a response for a manually activated job](docs/images/manual-response.jpg)
 
@@ -83,18 +85,18 @@ xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
 
 2. Open Camunda Stub Worker. On first launch it creates a **Local Camunda** profile for `localhost:26500` and Camunda `8.5`.
 3. Select **Check connection**.
-4. Add a job type that exactly matches the BPMN `zeebe:taskDefinition type`. Job types are case-sensitive.
+4. Open **Job types** and add a job type that exactly matches the BPMN `zeebe:taskDefinition type`. Job types are case-sensitive.
 5. Add at least one response scenario.
 6. For an automatic worker, select its active scenario.
-7. Deploy your BPMN model with Camunda Modeler or `zbctl`, start the job type, then open **Processes**. Enter its BPMN process ID and JSON variables, leave version blank for the latest deployment, and select **Start process**.
+7. Deploy your BPMN model with Camunda Modeler or `zbctl`, then start the worker. To start an instance from the app, configure Operate as described below, open **Processes**, select the process and version, and select **Start process…** to enter JSON variables. Without Operate, start the instance with an external tool; the configured workers still handle its jobs.
 
 ### Start a process
 
-Open **Processes**, first in the sidebar. Choose a deployed process from Operate and a version (latest by default). Review its tasks and shared responses, then select **Start process…** to open the start dialog. Review the process and version, add your input variables as a JSON object, and select **Start process**. The result appears in the dialog. The app starts the displayed version. With **Enter ID manually**, you can leave Version blank to start the latest deployed version or enter a specific version; task discovery requires selecting a deployed process.
+Open **Processes**, first in the sidebar. Choose a deployed process from Operate and a version (latest by default). Review its tasks and shared responses, then select **Start process…** to open the start dialog. Review the process and version, add your input variables as a JSON object, and select **Start process**. The result appears in the dialog. The app starts the displayed version. The process list, task discovery, and in-app process start require Operate; manual process ID entry is not available.
 
 ![Start process with a deployed process selected, JSON variables, and returned instance keys](docs/images/start-process.jpg)
 
-Screenshots show the current app UI with illustrative sample data.
+Screenshots show the current frontend with isolated sample data and simulated backend responses.
 
 The app shows the confirmed process instance key and definition key. It returns once the instance is created, without waiting for the process to finish. On an uncertain result (such as a timeout), check Camunda before trying again: an instance may already exist. Process starts are not retried automatically or saved in response History; History records jobs handled by the workers. BPMN deployment still requires an external tool.
 
@@ -110,11 +112,11 @@ New local connections default to `http://localhost:8081` with username `demo` an
 
 To remove a saved connection, open **Connections** and select **Delete** beside its profile, then confirm. Select another profile in the top **Profile** menu first, and stop workers and finish active jobs. At least one profile must remain. Deletion also removes the profile’s saved credentials, job types, and response scenarios. Activation history remains in the local database but is no longer accessible through the deleted profile.
 
-The picker lists default-tenant processes with a separate version selector for each BPMN process ID. Recently deployed models may take a moment to appear in Operate. If Operate is unavailable, manual ID entry still works. The bundled Docker environment contains only Zeebe; Operate is optional and must be provided separately.
+The picker lists default-tenant processes with a separate version selector for each BPMN process ID. Recently deployed models may take a moment to appear in Operate. Without Operate, use **Job types** to configure workers and an external tool to start instances. The bundled Docker environment contains only Zeebe; Operate is optional and must be provided separately.
 
 ## Compatibility and scope
 
-The verified server target is **Zeebe 8.5.25**. Selecting **Other 8.x** uses the 8.5 API mode and does not imply verified compatibility.
+The verified server target is **Zeebe 8.5.25**. Entering another 8.x version in **Camunda version** uses the 8.5 API mode and does not imply verified compatibility.
 
 The Zeebe connection uses plaintext gRPC with an explicit `host:port`; Zeebe OAuth, TLS, Camunda SaaS, and multitenancy are not supported. The optional Operate connection uses the v1 REST API over HTTP or HTTPS with built-in login, bearer-token authentication, or no authentication. Conditional scenarios, scripts, BPMN deployment, and unattended update installation are outside the app's scope.
 
@@ -166,7 +168,7 @@ Dependencies are pinned in `go.mod` and `frontend/package-lock.json`:
 - Wails **2.15.0**
 - Svelte **5.57.0**, Vite **8.3.0**, and TypeScript **5.9.2**
 - Camunda Go client / Zeebe protocol **8.5.25**
-- `modernc.org/sqlite` **1.39.1** (pure Go; no system SQLite dependency)
+- `modernc.org/sqlite` **1.58.0** (pure Go; no system SQLite dependency)
 
 The UI uses CodeMirror for JSON editing, syntax highlighting, and validation. Update checks run in the background against published GitHub Releases and display an in-app download notification when a newer version is available.
 
@@ -217,7 +219,7 @@ The sample models in `integration/bpmn/` cover each response type:
 - `business-error.bpmn` — job type `stub-business-error`, boundary error code `BUSINESS_ERROR`
 - `technical-failure.bpmn` — job type `stub-technical-failure` with three initial retries
 
-Deploy the models with Camunda Modeler, `zbctl`, or another external tool. Start instances from **Start process** using `stub_success_process`, `stub_business_error_process`, or `stub_technical_failure_process`.
+Deploy the models with Camunda Modeler, `zbctl`, or another external tool. Start instances with an external tool, or connect Operate and select `stub_success_process`, `stub_business_error_process`, or `stub_technical_failure_process` in **Processes** before selecting **Start process…**.
 
 ## Verification
 

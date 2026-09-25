@@ -149,27 +149,45 @@
   }
   async function formatScenario(){const owner=editingScenario;if(!owner)return;const original=owner.variablesJson;await runModal(owner,'Formatting…',async()=>{const formatted=await call<string>('FormatJSON',original);if(editingScenario===owner&&owner.variablesJson===original)editingScenario.variablesJson=formatted})}
 
-  async function submit(a:Activation){const d=drafts[a.id];await run(async()=>{await call('SaveDraft',a.id,d);await call('SubmitResponse',a.id,d);await reload()})}
-  async function saveDraft(a:Activation){await run(async()=>{await call('SaveDraft',a.id,drafts[a.id])})}
-  async function formatDraft(id:string){await run(async()=>{drafts[id].variablesJson=await call('FormatJSON',drafts[id].variablesJson)})}
+  let selectedPending:Record<string,string> = {}
+  let pendingOperations:Record<string,string> = {}, pendingErrors:Record<string,string> = {}
+  let savedDrafts:Record<string,string> = {}
+  function draftStatus(a:Activation){
+    if(pendingOperations[a.id])return pendingOperations[a.id]
+    const saved=savedDrafts[a.id]??JSON.stringify(parseDraft(a))
+    return JSON.stringify(drafts[a.id])===saved?'Draft saved':'Unsaved changes'
+  }
+  async function pendingAction(a:Activation,label:string,action:()=>Promise<void>){
+    if(pendingOperations[a.id])return
+    pendingOperations={...pendingOperations,[a.id]:label};pendingErrors={...pendingErrors,[a.id]:''}
+    try{await action()}catch(e:any){pendingErrors={...pendingErrors,[a.id]:e?.message||String(e)}}
+    finally{pendingOperations={...pendingOperations,[a.id]:''}}
+  }
+  async function submit(a:Activation){const d={...drafts[a.id]};await pendingAction(a,'Sending…',async()=>{await call('SaveDraft',a.id,d);savedDrafts={...savedDrafts,[a.id]:JSON.stringify(d)};await call('SubmitResponse',a.id,d);await reload()})}
+  async function saveDraft(a:Activation){const d={...drafts[a.id]};await pendingAction(a,'Saving…',async()=>{await call('SaveDraft',a.id,d);savedDrafts={...savedDrafts,[a.id]:JSON.stringify(d)}})}
+  async function formatDraft(a:Activation){const original=drafts[a.id].variablesJson;await pendingAction(a,'Formatting…',async()=>{const formatted=await call<string>('FormatJSON',original);if(drafts[a.id]?.variablesJson===original)drafts[a.id].variablesJson=formatted})}
   function draftFromScenario(s:Scenario):Draft {
     return {outcome:s.outcome,variablesJson:s.variablesJson,errorCode:s.errorCode,errorMessage:s.errorMessage,remainingRetries:s.remainingRetries,retryBackoffMs:s.retryBackoffMs}
   }
   async function applyDraftScenario(a:Activation,id:string){
-    if(!id)return
-    draftScenarios[a.id]=id
+    if(pendingOperations[a.id])return
+    if(!id){draftScenarios[a.id]='';return}
     const scenario=scenarios.find(s=>s.id===id&&s.jobTypeConfigId===a.jobTypeConfigId)
     if(!scenario)return
-    const previous=drafts[a.id]
-    drafts[a.id]=draftFromScenario(scenario)
-    showError('')
-    try {
-      const saved=await call<Draft>('ApplyScenario',a.id,id)
-      if(draftScenarios[a.id]===id)drafts[a.id]=saved
-    } catch(e:any) {
-      if(draftScenarios[a.id]===id)drafts[a.id]=previous
-      showError(e?.message||String(e))
-    }
+    const previous={...drafts[a.id]}, previousId=draftScenarios[a.id]
+    const replacement=draftFromScenario(scenario), snapshot=JSON.stringify(replacement)
+    drafts[a.id]=replacement;draftScenarios[a.id]=id
+    await pendingAction(a,'Applying response…',async()=>{
+      try{
+        const saved=await call<Draft>('ApplyScenario',a.id,id)
+        savedDrafts={...savedDrafts,[a.id]:JSON.stringify(saved)}
+        if(JSON.stringify(drafts[a.id])===snapshot)drafts[a.id]=saved
+      }catch(e){
+        if(JSON.stringify(drafts[a.id])===snapshot){drafts[a.id]=previous;draftScenarios[a.id]=previousId}
+        else draftScenarios[a.id]=''
+        throw e
+      }
+    })
   }
 
   async function loadHistory(page=1){historyPage=page;history=await call('History',{profileId:selectedProfileId,jobType:historyType,outcome:historyOutcome,sendStatus:historyStatus,search:historySearch,fromUtc:historyFrom?new Date(historyFrom+'T00:00:00').toISOString():'',toUtc:historyTo?new Date(historyTo+'T23:59:59.999').toISOString():'',page})}
@@ -253,15 +271,51 @@
                 {#if waiting.length}<button class="link with-icon" aria-expanded={!!expandedPendingTasks[cardKey]} aria-controls={`pending-task-${cardKey}`} on:click={()=>expandedPendingTasks={...expandedPendingTasks,[cardKey]:!expandedPendingTasks[cardKey]}}><Clock3 size={14}/>{waiting.length} {waiting.length===1?'job':'jobs'} awaiting response</button>{:else}<span class="hint">No jobs awaiting response</span>{/if}
                 {#if type&&!task.dynamic}{#if rt(type.id).state==='running'||rt(type.id).state==='stopping'}<button class="ghost with-icon" disabled={busy} on:click={()=>stopType(type.id)}><Square size={12}/> Stop worker</button>{:else}<button class="ghost with-icon" disabled={busy||savingWorkerIds.includes(type.id)} on:click={()=>startType(type.id)}><Play size={12}/> Start worker</button>{/if}{/if}
               </div>
-              {#if waiting.length}<div class="task-pending" id={`pending-task-${cardKey}`} hidden={!expandedPendingTasks[cardKey]}>{#each waiting as a (a.id)}{#if drafts[a.id]}{@render pendingCard(a)}{/if}{/each}</div>{/if}
+              {#if waiting.length}<div class="task-pending" id={`pending-task-${cardKey}`} hidden={!expandedPendingTasks[cardKey]}>{@render pendingQueue(waiting,cardKey,true)}</div>{/if}
             </article>
 {/snippet}
 
-{#snippet pendingCard(a:Activation)}
-        <article class="pending-card"><div class="pending-head"><div><span class="pill">{a.jobType}</span><h3>Job key <code>{a.jobKey}</code></h3><p>{a.bpmnProcessId} · {a.elementId} · instance {a.processInstanceKey} · received {fmtDate(a.receivedAt)}</p></div><span class="status running">Activation valid</span></div>
-          <div class="json-grid"><div><span class="field-label">Input variables</span><pre>{a.inputJson}</pre><details><summary>Custom headers</summary><pre>{a.customHeadersJson}</pre></details></div><div><label>Scenario<select value={draftScenarios[a.id]||''} on:change={(e)=>applyDraftScenario(a,(e.currentTarget as HTMLSelectElement).value)}><option value="">Select a scenario</option>{#each scenarios.filter(s=>s.jobTypeConfigId===a.jobTypeConfigId) as s}<option value={s.id}>{s.name}</option>{/each}</select></label><label>Outcome<select bind:value={drafts[a.id].outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label><div class="draft-editor"><JsonEditor bind:value={drafts[a.id].variablesJson} ariaLabel="Prepared response JSON" compact/></div><button class="link" on:click={()=>formatDraft(a.id)}>Format JSON</button>{#if drafts[a.id].outcome==='business_error'}<div class="two"><input bind:value={drafts[a.id].errorCode} placeholder="errorCode"/><input bind:value={drafts[a.id].errorMessage} placeholder="Message"/></div>{:else if drafts[a.id].outcome==='technical_failure'}<input bind:value={drafts[a.id].errorMessage} placeholder="Failure message"/><div class="two"><label>Remaining retries<input type="number" min="0" bind:value={drafts[a.id].remainingRetries}/></label><label>Backoff, ms<input type="number" min="0" bind:value={drafts[a.id].retryBackoffMs}/></label></div><small class="hint">remainingRetries is an absolute value. Reusing the same positive value may cause repeated activations.</small>{/if}</div></div>
-          <div class="submit-row"><button class="ghost" on:click={()=>saveDraft(a)} disabled={busy}>Save draft</button><button class="primary" on:click={()=>submit(a)} disabled={busy||a.sendStatus==='sending'}>Send to Camunda</button></div>
-        </article>
+{#snippet pendingQueue(items:Activation[],queueKey:string,embedded=false)}
+  {@const selected=items.find(a=>a.id===selectedPending[queueKey])||items[0]}
+  {#if selected}
+  <section class="pending-workspace" class:embedded aria-label="Pending job queue">
+    <div class="pending-queue" role="group" aria-label="Choose a pending job">
+      <div class="pending-queue-count">{#if embedded}Pending jobs{:else}{items.length} {items.length===1?'job':'jobs'} awaiting response{/if}</div>
+      {#each items as a (a.id)}
+        <button type="button" class="pending-queue-item" aria-pressed={a.id===selected.id} aria-label={`Job ${a.jobKey}`} on:click={()=>selectedPending={...selectedPending,[queueKey]:a.id}}>
+          <strong>{embedded?'Job':a.jobType} · …{a.jobKey.slice(-4)}</strong>
+          <span>{#if !embedded}{a.bpmnProcessId} · {/if}Instance …{a.processInstanceKey.slice(-4)}</span>
+          <small>{pendingErrors[a.id]?'Response needs attention':draftStatus(a)==='Draft saved'?'Ready':draftStatus(a)}</small>
+        </button>
+      {/each}
+    </div>
+    <div class="pending-editor">
+      {#key selected.id}{#if drafts[selected.id]}{@render pendingEditor(selected)}{/if}{/key}
+    </div>
+  </section>
+  {/if}
+{/snippet}
+
+{#snippet pendingEditor(a:Activation)}
+  <div class="pending-editor-heading"><div><h3>{a.jobType} · Job …{a.jobKey.slice(-4)}</h3><p>{a.bpmnProcessId} · instance …{a.processInstanceKey.slice(-4)}</p></div><span class="status running">Activation valid</span></div>
+  <div class="pending-context"><span class="field-label">Input variables</span><pre>{a.inputJson}</pre><span class="field-label">Custom headers</span><pre>{a.customHeadersJson}</pre></div>
+  <fieldset class="pending-response-fields" disabled={!!pendingOperations[a.id]||busy||a.sendStatus==='sending'}>
+    <legend>Response for this job</legend>
+    <div class="pending-response-choices" role="group" aria-label="Saved responses">
+      {#each scenarios.filter(s=>s.jobTypeConfigId===a.jobTypeConfigId) as scenario}
+        <button type="button" aria-pressed={draftScenarios[a.id]===scenario.id} on:click={()=>applyDraftScenario(a,scenario.id)}>{scenario.name}</button>
+      {/each}
+      <button type="button" aria-pressed={!draftScenarios[a.id]} on:click={()=>applyDraftScenario(a,'')}>Custom</button>
+    </div>
+    <label>Outcome<select bind:value={drafts[a.id].outcome}><option value="success">Success</option><option value="business_error">Business error</option><option value="technical_failure">Technical failure</option></select></label>
+    {#if drafts[a.id].outcome==='business_error'}<div class="two"><label>Error code<input bind:value={drafts[a.id].errorCode}/></label><label>Error message<input bind:value={drafts[a.id].errorMessage}/></label></div>
+    {:else if drafts[a.id].outcome==='technical_failure'}<label>Failure message<input bind:value={drafts[a.id].errorMessage}/></label><div class="two"><label>Retries remaining<input type="number" min="0" bind:value={drafts[a.id].remainingRetries}/></label><label>Retry delay, ms<input type="number" min="0" bind:value={drafts[a.id].retryBackoffMs}/></label></div><small class="hint">This is the retry count sent to Camunda, not a decrement. Reusing a positive value may cause repeated activations.</small>{/if}
+    <div class="editor-field-head"><span class="field-label">Response variables</span><button type="button" class="link" on:click={()=>formatDraft(a)}>Format JSON</button></div>
+  </fieldset>
+  <JsonEditor bind:value={drafts[a.id].variablesJson} ariaLabel={`Response variables for job ${a.jobKey}`} compact/>
+  <details class="pending-context"><summary>Job details</summary><dl><dt>Job key</dt><dd><code>{a.jobKey}</code></dd><dt>Process instance</dt><dd><code>{a.processInstanceKey}</code></dd><dt>BPMN task</dt><dd><code>{a.elementId}</code></dd><dt>Received</dt><dd>{fmtDate(a.receivedAt)}</dd></dl></details>
+  {#if pendingErrors[a.id]}<div class="inline-error" role="alert">{pendingErrors[a.id]}</div>{/if}
+  <div class="pending-editor-footer"><span class="hint" role="status">{draftStatus(a)}</span><button class="ghost" on:click={()=>saveDraft(a)} disabled={busy||!!pendingOperations[a.id]||a.sendStatus==='sending'}>{pendingOperations[a.id]==='Saving…'?'Saving…':'Save draft'}</button><button class="primary" on:click={()=>submit(a)} disabled={busy||!!pendingOperations[a.id]||a.sendStatus==='sending'}>{pendingOperations[a.id]==='Sending…'||a.sendStatus==='sending'?'Sending…':'Send to Camunda'}</button></div>
 {/snippet}
 
 <svelte:head><title>Camunda Stub Worker</title></svelte:head>
@@ -339,15 +393,13 @@
           </div>
           {/if}
           <p class="hint">Pending jobs are manual jobs activated by this app for the selected process version. Workers can also receive jobs from other processes using the same job type.</p>
-          {#each processPending.filter(a=>!processTasks.some(task=>task.id===a.elementId)) as a (a.id)}{#if drafts[a.id]}{@render pendingCard(a)}{/if}{/each}
+          {@render pendingQueue(processPending.filter(a=>!processTasks.some(task=>task.id===a.elementId)),'process-unmatched')}
         {:else}<div class="empty"><div><Waypoints size={24}/></div><h3>Select a BPMN process to get started</h3><p>Its worker tasks and saved responses will appear here.</p></div>{/if}
       </section>
     {:else if tab==='pending'}
       <section class="workspace">
       {#if !pending.length}<div class="empty"><div><Check size={24} strokeWidth={1.7}/></div><h3>No jobs awaiting response</h3><p>Jobs activated by manual workers will appear here.</p></div>{/if}
-      {#each pending as a (a.id)}
-        {#if drafts[a.id]}{@render pendingCard(a)}{/if}
-      {/each}
+      {@render pendingQueue(pending,'all-pending')}
       </section>
     {:else if tab==='history'}
       <section class="workspace"><div class="command-bar"><strong>{history.total||0} records</strong><button class="danger-text" on:click={requestClearHistory}>Clear completed</button></div>

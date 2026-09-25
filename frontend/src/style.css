@@ -316,9 +316,9 @@ tbody tr:hover { background: #202427; }
 .process-task .add-response:hover:not(:disabled) { color: var(--text); background: var(--raised); }
 .process-task-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; padding: 12px 0; border-top: 1px solid var(--rule); }
 .process-task-footer .hint { margin: 0; }
-.task-pending { padding: 0 0 8px; border-top: 1px solid var(--rule); }
+.task-pending { padding: 0 0 16px; }
 .task-pending[hidden] { display: none; }
-.task-pending .pending-card { margin: 12px 0; }
+
 
 .process-overview-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .process-overview-head > button { flex-shrink: 0; }
@@ -366,3 +366,33 @@ select {
 .start-process-context { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--rule); border-radius: 4px; background: var(--ink); }
 .start-process-context code { overflow-wrap: anywhere; }
 .start-process-context span { color: var(--muted); font-size: 13px; }
+
+/* A shared queue keeps one response editor visible while preserving each draft. */
+.pending-workspace { display: grid; grid-template-columns: minmax(175px, .55fr) minmax(0, 1.65fr); gap: 20px; }
+.task-pending .pending-workspace { margin-top: 4px; }
+.pending-queue { min-width: 0; padding: 0 16px 0 0; border-right: 1px solid var(--rule); }
+.pending-queue-count { padding: 4px 10px 12px; color: var(--muted); font-size: 12px; }
+.pending-queue-item { display: grid; gap: 3px; width: 100%; margin-bottom: 2px; padding: 10px; border: 0; border-radius: 0; color: var(--text); background: transparent; text-align: left; overflow-wrap: anywhere; }
+.pending-queue-item span, .pending-queue-item small { color: var(--muted); font-size: 12px; }
+.pending-queue-item:hover { background: var(--raised); }
+.pending-queue-item[aria-pressed="true"] { background: var(--surface-selected); }
+.pending-editor { min-width: 0; padding: 4px 0 0; }
+.pending-editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pending-editor-heading h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.pending-editor-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.pending-context { margin: 14px 0; }
+.pending-context summary { cursor: pointer; color: var(--text-action); padding: 6px 0; font-size: 13px; }
+.pending-context pre { padding: 10px; border: 1px solid var(--rule); background: var(--surface-inset); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+.pending-context dl { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px 14px; font-size: 12px; }
+.pending-context dt { color: var(--muted); }
+.pending-context dd { margin: 0; overflow-wrap: anywhere; }
+.pending-response-fields { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.pending-response-fields legend { padding: 0 0 8px; color: var(--text-secondary); font-size: 13px; }
+.pending-response-fields label { display: grid; gap: 6px; color: var(--text-secondary); font-size: 13px; }
+.pending-response-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.pending-response-choices button { min-height: var(--control-compact); padding: 5px 10px; color: var(--text); border: 1px solid var(--control-border); border-radius: var(--control-radius); background: var(--surface-inset); overflow-wrap: anywhere; max-width: 100%; }
+.pending-response-choices button[aria-pressed="true"] { border-color: var(--success); }
+.pending-response-choices button:hover:not(:disabled) { background: var(--raised); }
+.pending-editor-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--rule); }
+.pending-editor-footer > span { margin-right: auto; }
+@media (max-width: 1100px) { .pending-workspace { grid-template-columns: 180px minmax(0,1fr); } .pending-workspace { gap: 14px; } .pending-queue { padding-right: 12px; } .pending-response-fields .two { grid-template-columns: 1fr; } }

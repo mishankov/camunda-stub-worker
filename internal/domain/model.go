@@ -200,6 +200,7 @@ type HistoryPage struct {
 }
 
 type Bootstrap struct {
+	AppVersion        string             `json:"appVersion"`
 	Profiles          []Profile          `json:"profiles"`
 	SelectedProfileID string             `json:"selectedProfileId"`
 	JobTypes          []JobTypeConfig    `json:"jobTypes"`

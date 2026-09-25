@@ -26,11 +26,15 @@ Camunda Stub Worker preserves JSON as text end to end. Large integers such as Ze
 
 ## How it works
 
-1. Add the exact job type used by a service task in your BPMN model.
-2. Define one or more response scenarios for that job type.
-3. Choose **Automatic** mode to respond with the active scenario, or **Manual** mode to review each job first.
-4. Start the worker, then use **Start process** to create a process instance.
-5. Review what happened in **History**, including every send attempt.
+1. Open **Processes**, the default screen, and select a deployed BPMN process and version.
+2. Review its worker tasks and add or edit response scenarios directly on each task.
+3. Choose **Automatic** mode with an active response, or **Manual** mode to review each job.
+4. Start the relevant workers, then select **Start process…** to enter variables and create an instance.
+5. Handle waiting jobs under each task, or use **Awaiting response** for all manual jobs. Review completed sends in **History**.
+
+Responses and worker settings are shared by job type within a connection. Editing them in **Processes** also updates **Job types** and every other process using that type. Worker start/stop controls affect that shared worker across all process instances.
+
+The task list comes from the selected BPMN definition in Operate, including tasks in embedded subprocesses. Called processes are configured separately. Expression-based job types are shown but must be configured by their resolved value in **Job types**. Pending jobs are manual jobs activated by this app, filtered to the selected process definition version.
 
 ### Automatic mode
 
@@ -82,11 +86,11 @@ xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
 4. Add a job type that exactly matches the BPMN `zeebe:taskDefinition type`. Job types are case-sensitive.
 5. Add at least one response scenario.
 6. For an automatic worker, select its active scenario.
-7. Deploy your BPMN model with Camunda Modeler or `zbctl`, start the job type, then open **Start process**. Enter its BPMN process ID and JSON variables, leave version blank for the latest deployment, and select **Start process**.
+7. Deploy your BPMN model with Camunda Modeler or `zbctl`, start the job type, then open **Processes**. Enter its BPMN process ID and JSON variables, leave version blank for the latest deployment, and select **Start process**.
 
 ### Start a process
 
-Open **Start process**, below **Awaiting response** in the sidebar. Choose a deployed process from Operate, or select **Enter ID manually**. Leave **Version** blank for the latest deployed version, or enter a specific version. Add your input variables as a JSON object and select **Start process**.
+Open **Processes**, first in the sidebar. Choose a deployed process from Operate and a version (latest by default). Review its tasks and shared responses, then select **Start process…** to open the start dialog. Review the process and version, add your input variables as a JSON object, and select **Start process**. The result appears in the dialog. The app starts the displayed version. With **Enter ID manually**, you can leave Version blank to start the latest deployed version or enter a specific version; task discovery requires selecting a deployed process.
 
 ![Start process with a deployed process selected, JSON variables, and returned instance keys](docs/images/start-process.jpg)
 
@@ -98,7 +102,7 @@ The app shows the confirmed process instance key and definition key. It returns 
 
 1. Open **Connections → Edit profile** and set the **Operate URL**, with or without `/v1`. Operate and Zeebe must point to the same cluster.
 2. Choose **Username and password**, **Bearer token**, or **None** under **Operate authentication** and enter the corresponding credentials.
-3. Save the profile, then open **Start process**. Use **Refresh processes** to load new deployments.
+3. Save the profile, then open **Processes**. Use **Refresh processes** to load new deployments.
 
 ![Connection profile editor with Operate URL and username/password authentication](docs/images/connections.jpg)
 
@@ -106,7 +110,7 @@ New local connections default to `http://localhost:8081` with username `demo` an
 
 To remove a saved connection, open **Connections** and select **Delete** beside its profile, then confirm. Select another profile in the top **Profile** menu first, and stop workers and finish active jobs. At least one profile must remain. Deletion also removes the profile’s saved credentials, job types, and response scenarios. Activation history remains in the local database but is no longer accessible through the deleted profile.
 
-The picker lists default-tenant processes and combines their versions into one entry per BPMN process ID. Recently deployed models may take a moment to appear in Operate. If Operate is unavailable, manual ID entry still works. The bundled Docker environment contains only Zeebe; Operate is optional and must be provided separately.
+The picker lists default-tenant processes with a separate version selector for each BPMN process ID. Recently deployed models may take a moment to appear in Operate. If Operate is unavailable, manual ID entry still works. The bundled Docker environment contains only Zeebe; Operate is optional and must be provided separately.
 
 ## Compatibility and scope
 

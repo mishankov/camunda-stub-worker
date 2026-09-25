@@ -86,6 +86,9 @@ func (a *App) Bootstrap() (domain.Bootstrap, error) {
 	if err != nil {
 		return domain.Bootstrap{}, err
 	}
+	if err := a.store.EnsureDefaultResponses(ctx, id); err != nil {
+		return domain.Bootstrap{}, err
+	}
 	types, err := a.store.JobTypes(ctx, id)
 	if err != nil {
 		return domain.Bootstrap{}, err
@@ -98,7 +101,7 @@ func (a *App) Bootstrap() (domain.Bootstrap, error) {
 	if err != nil {
 		return domain.Bootstrap{}, err
 	}
-	return domain.Bootstrap{Profiles: profiles, SelectedProfileID: id, JobTypes: types, Scenarios: scenarios, Runtime: a.manager.States(), Connection: a.manager.Connection(), Pending: pending, DataPath: a.store.Path()}, nil
+	return domain.Bootstrap{AppVersion: version, Profiles: profiles, SelectedProfileID: id, JobTypes: types, Scenarios: scenarios, Runtime: a.manager.States(), Connection: a.manager.Connection(), Pending: pending, DataPath: a.store.Path()}, nil
 }
 func (a *App) CheckConnection() (domain.ConnectionStatus, error) {
 	return a.manager.ConnectCheck(context.Background())
@@ -111,6 +114,16 @@ func (a *App) ListProcesses(profileID string) ([]operate.Process, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(p.CommandTimeoutMS)*time.Millisecond)
 	defer cancel()
 	return operate.ListProcesses(ctx, p.OperateURL, operate.Auth{Mode: p.OperateAuthMode, Username: p.OperateUsername, Password: p.OperatePassword, Token: p.OperateToken})
+}
+
+func (a *App) GetProcessTasks(profileID, key, processID string) ([]operate.Task, error) {
+	p, err := a.store.Profile(context.Background(), profileID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(p.CommandTimeoutMS)*time.Millisecond)
+	defer cancel()
+	return operate.GetProcessTasks(ctx, p.OperateURL, operate.Auth{Mode: p.OperateAuthMode, Username: p.OperateUsername, Password: p.OperatePassword, Token: p.OperateToken}, key, processID)
 }
 
 func (a *App) StartProcess(request domain.StartProcessRequest) (domain.ProcessInstance, error) {

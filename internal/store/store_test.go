@@ -244,3 +244,75 @@ func TestOperateCredentialsDefaultsMigrationAndRestart(t *testing.T) {
 		t.Fatal("none mode did not clear credentials")
 	}
 }
+
+func TestDefaultResponsesFollowDisplayOrderAndPreserveSelection(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "defaults.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	profiles, err := s.Profiles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileID := profiles[0].ID
+	worker, err := s.SaveJobType(ctx, domain.JobTypeConfig{ProfileID: profileID, JobType: "default-response", Mode: domain.ModeManual, MaxActiveJobs: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ensure := func() {
+		t.Helper()
+		if err := s.EnsureDefaultResponses(ctx, profileID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertSelection := func(want string) {
+		t.Helper()
+		got, err := s.JobType(ctx, worker.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want == "" {
+			if got.ActiveScenarioID != nil {
+				t.Fatalf("unexpected selection: %v", *got.ActiveScenarioID)
+			}
+		} else if got.ActiveScenarioID == nil || *got.ActiveScenarioID != want {
+			t.Fatalf("selection=%v want=%s", got.ActiveScenarioID, want)
+		}
+	}
+	save := func(name string) domain.Scenario {
+		t.Helper()
+		v, err := s.SaveScenario(ctx, domain.Scenario{JobTypeConfigID: worker.ID, Name: name, Outcome: domain.OutcomeSuccess, VariablesJSON: "{}"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	ensure()
+	assertSelection("")
+	z := save("Z response")
+	assertSelection(z.ID) // The first save must select it without Bootstrap or refresh.
+	a := save("A response")
+	assertSelection(z.ID) // Adding a response must not replace the user's selection.
+	if _, err := s.SaveJobType(ctx, worker); err != nil {
+		t.Fatal(err)
+	} // Simulate an older unselected worker.
+	if err := s.EnsureDefaultResponses(ctx, "another-profile"); err != nil {
+		t.Fatal(err)
+	}
+	assertSelection("")
+	ensure()
+	assertSelection(a.ID)
+	worker.ActiveScenarioID = &z.ID
+	if _, err := s.SaveJobType(ctx, worker); err != nil {
+		t.Fatal(err)
+	}
+	ensure()
+	assertSelection(z.ID)
+	if err := s.DeleteScenario(ctx, z.ID); err != nil {
+		t.Fatal(err)
+	}
+	ensure()
+	assertSelection(a.ID)
+}

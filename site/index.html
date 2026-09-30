@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Start local Camunda 8 processes, browse deployments through Operate, and test worker responses from one desktop app.">
+    <meta name="description" content="Start local Camunda 8 processes, browse deployments through Operate or deploy BPMN models from disk, and test worker responses from one desktop app.">
     <meta name="theme-color" content="#121416">
     <title>Camunda Stub Worker</title>
     <link rel="icon" href="favicon.png" type="image/png">
@@ -28,11 +28,11 @@
       <div class="features">
         <p><strong>Choose the outcome.</strong> Return success, throw a business error, or simulate a technical failure.</p>
         <p><strong>Control the response.</strong> Run automatically or inspect and respond to jobs manually.</p>
-        <p><strong>Start from the app.</strong> Pick a deployed process and version from Operate, configure its worker responses, then supply JSON variables.</p>
+        <p><strong>Start from the app.</strong> Pick a deployed process and version - from Operate, or from a model you deployed from disk - configure its worker responses, then supply JSON variables.</p>
       </div>
       <section class="feature-section" aria-labelledby="start-title">
         <h2 id="start-title">From deployment to process instance.</h2>
-        <p>Browse deployed processes through the Operate API and refresh after deploying a new model. Choose a version, configure shared responses on its worker tasks, then open Start process to add JSON variables and get the new instance key. In-app process start requires Operate; without it, configure Job types and start instances with an external tool.</p>
+        <p>Browse deployed processes through the Operate API, or deploy a BPMN model from disk with one click. Choose a version, configure shared responses on its worker tasks, then open Start process to add JSON variables and get the new instance key. Without Operate you can deploy, configure workers, and start instances entirely from the app.</p>
         <figure><img class="screenshot" src="assets/start-process.jpg" width="1280" height="820" loading="lazy" alt="Start process dialog showing Order fulfillment, input variables, and the created instance key"><figcaption>Start a process and see the instance confirmed by Camunda.</figcaption></figure>
       </section>
       <section class="feature-section" aria-labelledby="manual-title">
@@ -47,7 +47,7 @@
         <p class="note">Configuration and history stay on your computer. Saved passwords and tokens are stored in plaintext in the local SQLite database and omitted from profile exports.</p>
       </section>
       <p class="note">Screenshots show the current frontend with isolated sample data and simulated backend responses.</p>
-      <p class="compatibility">For local Zeebe connections; verified with 8.5.25. Operate v1 is required for the Processes screen and must connect to the same cluster; standalone workers do not require it. Deploy BPMN models with an external tool. Builds are unsigned. See <a href="https://github.com/mishankov/camunda-stub-worker#install">installation and requirements</a>.</p>
+      <p class="compatibility">For local Zeebe connections; verified with 8.5.25. The optional Operate v1 connection must point to the same cluster; without it, deploy BPMN models from disk in the app. Builds are unsigned. See <a href="https://github.com/mishankov/camunda-stub-worker#install">installation and requirements</a>.</p>
     </main>
     <footer class="wrap">Camunda Stub Worker</footer>
   </body>

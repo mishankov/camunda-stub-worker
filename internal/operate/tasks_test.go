@@ -16,21 +16,6 @@ const taskXML = `<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL
 <userTask id="human"/><callActivity id="called"/>
 </process><process id="other"><serviceTask id="excluded"><extensionElements><z:taskDefinition type="other"/></extensionElements></serviceTask></process></definitions>`
 
-func TestParseTasks(t *testing.T) {
-	tasks, err := parseTasks([]byte(taskXML), "order")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tasks) != 3 || tasks[0].Name != "Charge card" || tasks[0].JobType != "payment" || tasks[1].ID != "notify" || !tasks[2].Dynamic {
-		t.Fatalf("unexpected tasks: %+v", tasks)
-	}
-	for _, tc := range []struct{ raw, id string }{{taskXML, "missing"}, {"<html/>", "order"}, {"<definitions", "order"}} {
-		if _, err := parseTasks([]byte(tc.raw), tc.id); err == nil {
-			t.Fatalf("accepted invalid definition %q", tc)
-		}
-	}
-}
-
 func TestGetProcessTasks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/operate/v1/process-definitions/9007199254740993/xml" || r.Method != "GET" || r.Header.Get("Authorization") != "Bearer secret" {

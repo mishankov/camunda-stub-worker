@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { Boxes, Cable, Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Download, Ellipsis, History, Pencil, Plus, Play, Square, Upload, Waypoints, X } from '@lucide/svelte'
   import { call, on } from './lib/api'
+  import { mergeFileDeployments, type DeployedProcess, type FileProcess } from './lib/processes'
   import JsonEditor from './lib/JsonEditor.svelte'
   import Modal from './lib/Modal.svelte'
   import ActionMenu from './lib/ActionMenu.svelte'
@@ -17,12 +18,11 @@
 
   let tab:'types'|'process'|'pending'|'history'|'settings' = 'process'
   type ProcessInstance = { bpmnProcessId:string; version:number; processDefinitionKey:string; processInstanceKey:string }
-  type DeployedProcess = { bpmnProcessId:string; name:string; latestVersion:number; versions:{version:number;key:string}[] }
   let deployedProcesses:DeployedProcess[] = [], loadingProcesses = false, processesLoaded = false, processesError = '', processSourceKey = '', processListRequest = 0
   type ProcessTask = {id:string;name:string;jobType:string;dynamic:boolean}
   type FileDeployment = { fileName:string; deploymentKey:string; processes:{bpmnProcessId:string;name:string;version:number;processDefinitionKey:string;tasks:ProcessTask[]}[] }
-  let fileProcesses:{bpmnProcessId:string;name:string;version:number;processDefinitionKey:string}[] = []
-  let fileTasks:Record<string,ProcessTask[]> = {}, deploying = false, deployNotice = ''
+  let fileProcesses:FileProcess[] = []
+  let fileTasks:Record<string,ProcessTask[]> = {}, deploying = false, deployNotice = '', deploymentRequest = 0
   let processTasks:ProcessTask[] = [], tasksLoading = false, tasksError = '', tasksSource = '', tasksRequest = 0
   $: selectedProcess = deployedProcesses.find(p=>p.bpmnProcessId===processId)
   $: selectedDefinition = selectedProcess?.versions?.find(v=>v.version===(processVersion??selectedProcess.latestVersion))
@@ -125,6 +125,7 @@
   async function refreshLiveState() { if(refreshingLiveState)return;refreshingLiveState=true;try{const b=await call<any>('Bootstrap');runtime=b.runtime||[];connection=b.connection;pending=b.pending||[];for(const a of pending)if(!drafts[a.id]){drafts[a.id]=parseDraft(a);try{draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||''}catch{draftScenarios[a.id]=''}}}catch{}finally{refreshingLiveState=false} }
   async function selectProfile(event:Event) {
     const select=event.currentTarget as HTMLSelectElement
+    if(deploying){select.value=selectedProfileId;showError('Wait for the deployment to finish before switching connections.');return}
     if(workerCommandIds.length){select.value=selectedProfileId;showError('Wait for the worker operation to finish before switching connections.');return}
     const previous=selectedProfileId
     selectedProfileId=select.value
@@ -132,6 +133,7 @@
   }
   async function checkConnection() { await run(async()=>{ connection=await call('CheckConnection') }) }
   function resetProcessSource(key:string){
+    deploymentRequest++
     tasksRequest++;tasksSource='';processTasks=[];tasksError='';tasksLoading=false;processResult=null;processError='';processSourceKey=key;processListRequest++;deployedProcesses=[];fileProcesses=[];fileTasks={};deployNotice='';processesLoaded=false;loadingProcesses=false;processesError='';processId='';processVersion=undefined
   }
   async function loadProcesses(){
@@ -149,27 +151,15 @@
   // Processes deployed from local files stay selectable even after an
   // Operate refresh, since Operate may not list them yet.
   function withFileDeployments(list:DeployedProcess[]):DeployedProcess[]{
-    const merged:DeployedProcess[] = []
-    for(const existing of list){
-      const fresh=fileProcesses.filter(p=>p.bpmnProcessId===existing.bpmnProcessId)
-      if(!fresh.length){merged.push(existing);continue}
-      merged.push({
-        bpmnProcessId:existing.bpmnProcessId,
-        name:existing.name||fresh[0].name,
-        latestVersion:Math.max(existing.latestVersion,...fresh.map(p=>p.version)),
-        versions:[...fresh.map(p=>({version:p.version,key:p.processDefinitionKey})),...existing.versions.filter(v=>!fresh.some(p=>p.version===v.version))],
-      })
-    }
-    for(const p of fileProcesses){
-      if(!merged.some(m=>m.bpmnProcessId===p.bpmnProcessId))merged.push({bpmnProcessId:p.bpmnProcessId,name:p.name,latestVersion:p.version,versions:[{version:p.version,key:p.processDefinitionKey}]})
-    }
-    return merged
+    return mergeFileDeployments(list,fileProcesses)
   }
   async function deployFromFile(){
-    if(deploying||busy)return
+    if(deploying||busy||startingProcess||loadingProcesses)return
+    const profileId=selectedProfileId, profileName=currentProfile?.name||profileId, request=++deploymentRequest
     deploying=true;processesError='';deployNotice='';processResult=null;processError='';showProcessStart=false
     try {
-      const result=await call<FileDeployment>('DeployBPMNFile',selectedProfileId)
+      const result=await call<FileDeployment>('DeployBPMNFile',profileId)
+      if(request!==deploymentRequest||profileId!==selectedProfileId)return
       if(!result?.fileName)return
       for(const p of result.processes)fileTasks[p.processDefinitionKey]=p.tasks||[]
       const added=result.processes.filter(p=>!fileProcesses.some(existing=>existing.bpmnProcessId===p.bpmnProcessId&&existing.version===p.version))
@@ -177,8 +167,8 @@
       deployedProcesses=withFileDeployments(deployedProcesses)
       processId=result.processes[0].bpmnProcessId
       processVersion=result.processes[0].version
-      deployNotice=`${result.fileName} was deployed to ${currentProfile?.name||selectedProfileId} (deployment ${result.deploymentKey})`
-    } catch(e:any) { processesError=e?.message||String(e) }
+      deployNotice=`${result.fileName} was deployed to ${profileName} (deployment ${result.deploymentKey})`
+    } catch(e:any) { if(request===deploymentRequest&&profileId===selectedProfileId)processesError=e?.message||String(e) }
     finally { deploying=false }
   }
   async function startProcess(){
@@ -312,7 +302,7 @@
     if(busy||startingProcess||profileDeletionReasons[profile.id])return
     confirmation={title:'Delete connection profile?',message:'Its saved credentials, job types, and response scenarios will also be deleted. Activation history will remain in the local database, but will no longer be accessible through this profile. This cannot be undone.',target:profile.name,confirmLabel:'Delete profile',action:async()=>{await call('DeleteProfile',profile.id);await reload()}}
   }
-  async function saveProfile(){const owner=editingProfile;if(!owner)return;await runModal(owner,'Saving…',async()=>{const auth={...editingOperateAuth};const saved=await call<Profile>('SaveProfile',{...owner,operateAuthMode:auth.mode,operateUsername:auth.username,operatePassword:auth.password,operateToken:auth.token});if(!selectedProfileId){selectedProfileId=saved.id;await call('SelectProfile',saved.id)};await reload();if(saved.id===selectedProfileId){processListRequest++;deployedProcesses=[];fileProcesses=[];fileTasks={};deployNotice='';processesError='';processesLoaded=false;loadingProcesses=false;}if(editingProfile===owner)closeProfile()})}
+  async function saveProfile(){const owner=editingProfile;if(!owner)return;await runModal(owner,'Saving…',async()=>{const auth={...editingOperateAuth};const saved=await call<Profile>('SaveProfile',{...owner,operateAuthMode:auth.mode,operateUsername:auth.username,operatePassword:auth.password,operateToken:auth.token});if(!selectedProfileId){selectedProfileId=saved.id;await call('SelectProfile',saved.id)};await reload();if(saved.id===selectedProfileId){deploymentRequest++;processListRequest++;deployedProcesses=[];fileProcesses=[];fileTasks={};deployNotice='';processesError='';processesLoaded=false;loadingProcesses=false;}if(editingProfile===owner)closeProfile()})}
   async function openDataDirectory(){await run(async()=>{await call('OpenDataDirectory')})}
   async function exportProfile(){await run(async()=>{await call('ExportProfileFile',selectedProfileId)})}
   async function importProfile(){await run(async()=>{await call('ImportProfileFile');await reload()})}
@@ -415,7 +405,7 @@
   <main>
     <header>
       <strong class="view-title">{currentViewLabel}</strong>
-      <div class="profile-select"><label for="profile-select">Profile</label><select id="profile-select" value={selectedProfileId} on:change={selectProfile} disabled={busy||startingProcess}>{#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></div>
+      <div class="profile-select"><label for="profile-select">Profile</label><select id="profile-select" value={selectedProfileId} on:change={selectProfile} disabled={busy||startingProcess||deploying}>{#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></div>
       <div class="connection"><span class:ok={connection.state==='connected'} class:warn={connection.state==='version_mismatch'}></span><div><strong>{connection.state==='connected'?'Connected':connection.state==='version_mismatch'?'Versions differ':'Not connected'}</strong><small>{connection.detectedVersion ? `Server ${connection.detectedVersion} · selected ${connection.selectedVersion}` : `${profiles.find(p=>p.id===selectedProfileId)?.host}:${profiles.find(p=>p.id===selectedProfileId)?.port}`}</small></div></div>
       <button class="ghost" on:click={checkConnection} disabled={busy}>Check connection</button>
     </header>
@@ -450,18 +440,26 @@
             {#if selectedProcess}<select aria-label="Process version" bind:value={processVersion} disabled={startingProcess}><option value={undefined}>Latest (v{selectedProcess.latestVersion})</option>{#each selectedProcess.versions||[] as version}<option value={version.version}>Version {version.version}</option>{/each}</select>
             {:else}<select aria-label="Process version" disabled><option>Select a process first</option></select>{/if}</label>
           </div>
-          <div class="process-selection-actions">
-            <div class="actions">
-              {#if currentProfile?.operateUrl}<button type="button" class="ghost" on:click={loadProcesses} disabled={loadingProcesses||startingProcess||deploying}>{loadingProcesses?'Loading…':'Refresh processes'}</button>{/if}
-              <button type="button" class="ghost with-icon" on:click={deployFromFile} disabled={deploying||loadingProcesses||startingProcess}>{#if deploying}<span>Deploying…</span>{:else}<Upload size={14}/> Deploy from file…{/if}</button>
+          <div class="process-selection">
+            <div class="process-selection-actions">
+              <div class="actions">
+                {#if currentProfile?.operateUrl}<button type="button" class="ghost" on:click={loadProcesses} disabled={loadingProcesses||startingProcess||deploying}>{loadingProcesses?'Loading…':'Refresh processes'}</button>{/if}
+                <button type="button" class="ghost with-icon" on:click={deployFromFile} disabled={deploying||loadingProcesses||startingProcess}>{#if deploying}<span>Deploying…</span>{:else}<Upload size={14}/> Deploy from file…{/if}</button>
+              </div>
+              <button type="button" class="worker-start with-icon" disabled={!selectedDefinition||deploying} on:click={()=>{if(!startingProcess){processResult=null;processError=''}showProcessStart=true}}><Play size={14}/> Start process…</button>
             </div>
-            <button type="button" class="worker-start with-icon" disabled={!selectedDefinition||deploying} on:click={()=>{if(!startingProcess){processResult=null;processError=''}showProcessStart=true}}><Play size={14}/> Start process…</button>
+            <div class="process-selection-messages">
+              {#if deployNotice}<p class="hint" role="status">{deployNotice}</p>{/if}
+              {#if processesError}<div class="inline-error" role="alert">{processesError}</div>{/if}
+              {#if currentProfile?.operateUrl}
+                <p class="hint">Uses the Operate authentication configured in <button type="button" class="link" on:click={editCurrentProfile}>connection settings</button>. You can also <button type="button" class="link" on:click={deployFromFile}>deploy a BPMN model from disk</button>.</p>
+                {#if !processesError&&processesLoaded&&!loadingProcesses&&!deployedProcesses.length}<p class="hint">No deployed processes found in the default tenant. Recently deployed models may take a moment to appear in Operate.</p>{/if}
+              {:else}
+                <p class="hint">No Operate connection configured. <button type="button" class="link" on:click={deployFromFile}>Deploy a BPMN model from disk</button>, or <button type="button" class="link" on:click={editCurrentProfile}>set the Operate URL in your connection profile</button> to browse deployed processes.</p>
+                <p class="hint">Processes remain deployed in Zeebe. This list is cleared when you restart the app, switch profiles, or save connection settings. Connect Operate to browse existing deployments.</p>
+              {/if}
+            </div>
           </div>
-          {#if deployNotice}<p class="hint" role="status">{deployNotice}</p>{/if}
-          {#if currentProfile?.operateUrl}
-            <p class="hint">Uses the Operate authentication configured in <button type="button" class="link" on:click={editCurrentProfile}>connection settings</button>. You can also <button type="button" class="link" on:click={deployFromFile}>deploy a BPMN model from disk</button>.</p>
-            {#if processesError}<div class="inline-error" role="alert">{processesError} Check connection settings and refresh the process list.</div>{:else if processesLoaded&&!loadingProcesses&&!deployedProcesses.length}<p class="hint">No deployed processes found in the default tenant. Recently deployed models may take a moment to appear in Operate.</p>{/if}
-          {:else}<p class="hint">No Operate connection configured. <button type="button" class="link" on:click={deployFromFile}>Deploy a BPMN model from disk</button>, or <button type="button" class="link" on:click={editCurrentProfile}>set the Operate URL in your connection profile</button> to browse deployed processes.</p>{/if}
         </div>
         {#if processId}
           <div class="command-bar process-task-heading"><div><strong>Worker tasks</strong><p class="hint">Responses, mode, and worker controls are shared by job type across this connection.</p></div><div class="actions">{#if hasActiveProcessWorkers}<button class="worker-stop with-icon" disabled={busy||tasksLoading||processWorkers.some(type=>workerCommandIds.includes(type.id))} on:click={stopProcessWorkers}><Square size={12}/> Stop all</button>{/if}{#if !allProcessWorkersRunning}<button class="worker-start with-icon" disabled={busy||tasksLoading||!processTasks.some(task=>!task.dynamic)||processWorkers.some(type=>workerCommandIds.includes(type.id)||savingWorkerIds.includes(type.id))} on:click={startProcessWorkers}><Play size={12}/> Start all</button>{/if}</div></div>

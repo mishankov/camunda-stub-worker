@@ -3,7 +3,17 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'site/**'
+      - '.agents/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'site/**'
+      - '.agents/**'
 
 jobs:
   test:

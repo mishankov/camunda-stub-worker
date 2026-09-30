@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,8 +15,10 @@ import (
 	"github.com/google/uuid"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/mishankov/camunda-stub-worker/internal/bpmn"
 	"github.com/mishankov/camunda-stub-worker/internal/configio"
 	"github.com/mishankov/camunda-stub-worker/internal/domain"
+	"github.com/mishankov/camunda-stub-worker/internal/gateway"
 	"github.com/mishankov/camunda-stub-worker/internal/operate"
 	workerruntime "github.com/mishankov/camunda-stub-worker/internal/runtime"
 	"github.com/mishankov/camunda-stub-worker/internal/store"
@@ -124,6 +127,81 @@ func (a *App) GetProcessTasks(profileID, key, processID string) ([]operate.Task,
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(p.CommandTimeoutMS)*time.Millisecond)
 	defer cancel()
 	return operate.GetProcessTasks(ctx, p.OperateURL, operate.Auth{Mode: p.OperateAuthMode, Username: p.OperateUsername, Password: p.OperatePassword, Token: p.OperateToken}, key, processID)
+}
+
+// DeployBPMNFile picks a BPMN model from disk and deploys it to the
+// selected profile's Zeebe cluster. An empty response means the user
+// cancelled the file dialog.
+func (a *App) DeployBPMNFile(profileID string) (domain.DeployResponse, error) {
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	p, err := a.store.Profile(ctx, profileID)
+	if err != nil {
+		return domain.DeployResponse{}, err
+	}
+	path, err := wailsruntime.OpenFileDialog(ctx, wailsruntime.OpenDialogOptions{Title: "Deploy a BPMN model", Filters: []wailsruntime.FileFilter{{DisplayName: "BPMN", Pattern: "*.bpmn"}}})
+	if err != nil {
+		return domain.DeployResponse{}, err
+	}
+	if path == "" {
+		return domain.DeployResponse{}, nil
+	}
+	return deployBPMNFile(ctx, p, path)
+}
+
+func deployBPMNFile(ctx context.Context, p domain.Profile, path string) (domain.DeployResponse, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return domain.DeployResponse{}, fmt.Errorf("could not read the BPMN file: %w", err)
+	}
+	if len(raw) > bpmn.MaxSize {
+		return domain.DeployResponse{}, errors.New("BPMN exceeds the 8 MB limit")
+	}
+	parsed, err := bpmn.Parse(raw)
+	if err != nil {
+		return domain.DeployResponse{}, err
+	}
+	if len(parsed) == 0 {
+		return domain.DeployResponse{}, errors.New("no processes found in the BPMN model")
+	}
+	gw, err := (gateway.ZeebeFactory{}).Connect(p)
+	if err != nil {
+		return domain.DeployResponse{}, err
+	}
+	defer gw.Close()
+	commandCtx, cancel := context.WithTimeout(ctx, time.Duration(p.CommandTimeoutMS)*time.Millisecond)
+	defer cancel()
+	deployment, err := gw.Deploy(commandCtx, filepath.Base(path), raw)
+	if err != nil {
+		if gateway.ClassifyCommandError(err) == gateway.ErrorUnknown || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return domain.DeployResponse{}, fmt.Errorf("deployment outcome unknown; the model may have been deployed. Check Camunda before retrying to avoid duplicates: %w", err)
+		}
+		return domain.DeployResponse{}, err
+	}
+	tasksByID, namesByID := map[string][]domain.ProcessTask{}, map[string]string{}
+	for _, process := range parsed {
+		tasksByID[process.BPMNProcessID] = process.Tasks
+		if process.Name != "" {
+			namesByID[process.BPMNProcessID] = process.Name
+		}
+	}
+	out := domain.DeployResponse{FileName: filepath.Base(path), Deployment: deployment.DeploymentKey, Processes: []domain.DeployedProcessInfo{}}
+	for _, process := range deployment.Processes {
+		tasks := tasksByID[process.BPMNProcessID]
+		if tasks == nil {
+			tasks = []domain.ProcessTask{}
+		}
+		out.Processes = append(out.Processes, domain.DeployedProcessInfo{
+			BPMNProcessID:        process.BPMNProcessID,
+			Name:                 namesByID[process.BPMNProcessID],
+			Version:              process.Version,
+			ProcessDefinitionKey: process.ProcessDefinitionKey,
+			Tasks:                tasks,
+		})
+	}
+	return out, nil
 }
 
 func (a *App) StartProcess(request domain.StartProcessRequest) (domain.ProcessInstance, error) {

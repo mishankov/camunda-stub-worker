@@ -36,6 +36,9 @@ func (f *fakeGateway) StartProcess(ctx context.Context, r domain.StartProcessReq
 	}
 	return domain.ProcessInstance{}, errors.New("unused")
 }
+func (f *fakeGateway) Deploy(context.Context, string, []byte) (domain.Deployment, error) {
+	return domain.Deployment{}, errors.New("unused")
+}
 func (f *fakeGateway) Topology(context.Context) (gateway.Topology, error) {
 	return gateway.Topology{Version: "8.5.25", Brokers: 1}, nil
 }

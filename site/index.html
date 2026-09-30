@@ -24,7 +24,7 @@
         </div>
         <p class="platforms">macOS · Windows · Linux</p>
       </section>
-      <img class="screenshot" src="assets/processes.jpg" width="1280" height="900" alt="Processes screen with shared responses for payment and inventory worker tasks">
+      <img class="screenshot" src="assets/processes.jpg" width="1280" height="960" alt="Processes screen after deploying a BPMN file without Operate, with shared responses for payment and inventory tasks">
       <div class="features">
         <p><strong>Choose the outcome.</strong> Return success, throw a business error, or simulate a technical failure.</p>
         <p><strong>Control the response.</strong> Run automatically or inspect and respond to jobs manually.</p>
@@ -33,6 +33,7 @@
       <section class="feature-section" aria-labelledby="start-title">
         <h2 id="start-title">From deployment to process instance.</h2>
         <p>Browse deployed processes through the Operate API, or deploy a BPMN model from disk with one click. Choose a version, configure shared responses on its worker tasks, then open Start process to add JSON variables and get the new instance key. Without Operate you can deploy, configure workers, and start instances entirely from the app.</p>
+        <p class="note">Models stay deployed in Zeebe. The app's list of file deployments clears when you restart, switch profiles, or save connection settings. Connect Operate to reload existing deployments, or deploy the model again to select it without Operate. If a deployment result is uncertain, check Camunda before retrying.</p>
         <figure><img class="screenshot" src="assets/start-process.jpg" width="1280" height="820" loading="lazy" alt="Start process dialog showing Order fulfillment, input variables, and the created instance key"><figcaption>Start a process and see the instance confirmed by Camunda.</figcaption></figure>
       </section>
       <section class="feature-section" aria-labelledby="manual-title">

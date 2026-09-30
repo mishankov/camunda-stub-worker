@@ -6,7 +6,7 @@ Use it to explore happy paths, business errors, and technical failures while dev
 
 [Download the latest release](https://github.com/mishankov/camunda-stub-worker/releases/latest)
 
-![Process worker tasks and their shared response scenarios](docs/images/processes.jpg)
+![Process deployed from a BPMN file without Operate, with shared worker response scenarios](docs/images/processes.jpg)
 
 ## What you can do
 
@@ -95,6 +95,8 @@ xattr -dr com.apple.quarantine "/Applications/Camunda Stub Worker.app"
 ### Start a process
 
 Open **Processes**, first in the sidebar. Choose a deployed process - listed by Operate, or added with **Deploy from file…** - and a version (latest by default). Review its tasks and shared responses, then select **Start process…** to open the start dialog. Review the process and version, add your input variables as a JSON object, and select **Start process**. The result appears in the dialog. The app starts the displayed version. Manual process ID entry is not available: select a process from Operate or deploy a model from disk.
+
+**Deploy from file…** accepts a `.bpmn` model up to 8 MiB and selects the deployed process version after Camunda confirms the deployment. Models remain deployed in Zeebe, but the app's list of file deployments and their parsed tasks is cleared when you restart the app, switch profiles, or save connection settings. Operate can reload existing deployments; without it, deploy the model again to make it selectable. If a deployment result is uncertain, check Camunda before retrying: the model may already have been deployed.
 
 ![Start process with a deployed process selected, JSON variables, and returned instance keys](docs/images/start-process.jpg)
 
@@ -187,8 +189,8 @@ wails dev
 ### Checks
 
 ```bash
+cd frontend && npm ci && npm test && npm run check && npm run build && cd ..
 go test -race ./...
-cd frontend && npm run check && npm run build
 ```
 
 ### Production builds

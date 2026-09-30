@@ -314,6 +314,17 @@ tbody tr:hover { background: #202427; }
 .task-pending { padding: 0 0 16px; }
 .task-pending[hidden] { display: none; }
 
+.call-history { padding: 0 0 16px; }
+.call-history summary { cursor: pointer; color: var(--text-action); padding: 6px 0; font-size: 13px; font-weight: 600; }
+.call-history .table-wrap { margin-top: 4px; }
+.call-history tbody tr { cursor: default; }
+.call-history tbody tr:hover { background: transparent; }
+.call-history .ctx { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-history .send.complete { color: var(--success-text); }
+.call-history .send.throwError { color: var(--warning-text); }
+.call-history .send.fail { color: var(--danger-text); }
+.call-history .hint { margin: 4px 0 0; }
+
 
 .process-overview-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .process-selection-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }

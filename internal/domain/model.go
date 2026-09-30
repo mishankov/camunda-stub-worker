@@ -199,6 +199,18 @@ type HistoryPage struct {
 	Total    int          `json:"total"`
 }
 
+// CallHistoryEntry describes one response command sent by the emulated worker.
+// History is kept in memory only and is not persisted.
+type CallHistoryEntry struct {
+	Time               string  `json:"time"`
+	JobType            string  `json:"jobType"`
+	ProcessInstanceKey string  `json:"processInstanceKey"`
+	InputContext       string  `json:"inputContext"`
+	OutputContext      string  `json:"outputContext"`
+	CallType           JobMode `json:"type"`
+	ResponseType       string  `json:"responseType"`
+}
+
 type Bootstrap struct {
 	AppVersion        string             `json:"appVersion"`
 	Profiles          []Profile          `json:"profiles"`

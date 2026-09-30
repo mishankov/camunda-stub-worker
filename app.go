@@ -259,6 +259,7 @@ func (a *App) SubmitResponse(id string, d domain.ResponseDraft) (domain.Response
 func (a *App) History(q domain.HistoryQuery) (domain.HistoryPage, error) {
 	return a.store.History(context.Background(), q)
 }
+func (a *App) CallHistory() []domain.CallHistoryEntry { return a.manager.CallHistory() }
 func (a *App) Attempts(activationID string) ([]domain.ResponseAttempt, error) {
 	return a.store.Attempts(context.Background(), activationID)
 }

@@ -144,6 +144,40 @@ func TestUnavailableAfterSendBecomesUnknown(t *testing.T) {
 	}
 }
 
+func TestSubmitRecordsCallHistory(t *testing.T) {
+	m, s, _, a := setupLive(t, nil)
+	defer s.Close()
+	defer m.Close()
+	d := domain.ResponseDraft{Outcome: domain.OutcomeSuccess, VariablesJSON: `{"out":1}`}
+	if _, err := m.Submit(context.Background(), a.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	history := m.CallHistory()
+	if len(history) != 1 {
+		t.Fatalf("history=%v", history)
+	}
+	entry := history[0]
+	if entry.JobType != "test" || entry.ProcessInstanceKey != a.ProcessInstanceKey || entry.InputContext != a.InputJSON || entry.OutputContext != d.VariablesJSON || entry.CallType != domain.ModeManual || entry.ResponseType != "complete" || entry.Time == "" {
+		t.Fatalf("entry=%+v", entry)
+	}
+}
+
+func TestCallHistoryIsCappedAt50AndNewestFirst(t *testing.T) {
+	m, s, _, _ := setupLive(t, nil)
+	defer s.Close()
+	defer m.Close()
+	for i := 0; i < maxCallHistory+10; i++ {
+		m.recordCall(domain.Activation{JobType: "test", ProcessInstanceKey: "pi"}, domain.ResponseDraft{Outcome: domain.OutcomeBusinessError})
+	}
+	history := m.CallHistory()
+	if len(history) != maxCallHistory {
+		t.Fatalf("len=%d want %d", len(history), maxCallHistory)
+	}
+	if history[0].ResponseType != "throwError" {
+		t.Fatalf("newest=%+v", history[0])
+	}
+}
+
 func TestStopCancelsActivePoll(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {

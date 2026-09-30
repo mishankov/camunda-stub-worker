@@ -19,6 +19,8 @@ import (
 
 type NotifyFunc func(string, any)
 
+const maxCallHistory = 50
+
 type Manager struct {
 	store           *store.Store
 	factory         gateway.Factory
@@ -32,6 +34,7 @@ type Manager struct {
 	reserved        int
 	closed          bool
 	startingProcess bool
+	callHistory     []domain.CallHistoryEntry
 }
 
 type typeWorker struct {
@@ -119,6 +122,7 @@ func (m *Manager) SetProfile(ctx context.Context, p domain.Profile) error {
 		_ = m.gw.Close()
 		m.gw = nil
 	}
+	m.callHistory = nil
 	m.profile = p
 	m.connection = domain.ConnectionStatus{State: "offline", Message: "Connection not checked", SelectedVersion: p.SelectedVersion}
 	return nil
@@ -620,6 +624,7 @@ func (m *Manager) submit(ctx context.Context, id string, d domain.ResponseDraft)
 	}
 	cancel()
 	duration := time.Since(started).Milliseconds()
+	m.recordCall(l.record, d)
 	if err == nil {
 		attempt.Status = domain.SendConfirmed
 		attempt.DurationMS = duration
@@ -667,6 +672,47 @@ func (m *Manager) submit(ctx context.Context, id string, d domain.ResponseDraft)
 	}
 	m.emit("activation:changed", l.record)
 	return attempt, err
+}
+
+// CallHistory returns the in-memory history of the most recent response
+// commands sent by the emulated worker, newest first.
+func (m *Manager) CallHistory() []domain.CallHistoryEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]domain.CallHistoryEntry, len(m.callHistory))
+	copy(out, m.callHistory)
+	return out
+}
+func (m *Manager) recordCall(r domain.Activation, d domain.ResponseDraft) {
+	entry := domain.CallHistoryEntry{
+		Time:               domain.UTCNow(),
+		JobType:            r.JobType,
+		ProcessInstanceKey: r.ProcessInstanceKey,
+		InputContext:       r.InputJSON,
+		OutputContext:      d.VariablesJSON,
+		CallType:           r.Mode,
+		ResponseType:       responseCommand(d.Outcome),
+	}
+	m.mu.Lock()
+	m.callHistory = append([]domain.CallHistoryEntry{entry}, m.callHistory...)
+	if len(m.callHistory) > maxCallHistory {
+		m.callHistory = m.callHistory[:maxCallHistory]
+	}
+	out := make([]domain.CallHistoryEntry, len(m.callHistory))
+	copy(out, m.callHistory)
+	m.mu.Unlock()
+	m.emit("call-history:changed", out)
+}
+func responseCommand(o domain.Outcome) string {
+	switch o {
+	case domain.OutcomeSuccess:
+		return "complete"
+	case domain.OutcomeBusinessError:
+		return "throwError"
+	case domain.OutcomeTechnicalFail:
+		return "fail"
+	}
+	return ""
 }
 
 func (m *Manager) expire(l *liveActivation, reason string) {

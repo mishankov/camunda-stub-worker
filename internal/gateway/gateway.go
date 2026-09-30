@@ -22,6 +22,7 @@ type Topology struct {
 
 type CamundaGateway interface {
 	StartProcess(context.Context, domain.StartProcessRequest) (domain.ProcessInstance, error)
+	Deploy(context.Context, string, []byte) (domain.Deployment, error)
 	Topology(context.Context) (Topology, error)
 	Activate(context.Context, string, int32, time.Duration) ([]domain.ActivatedJob, error)
 	Complete(context.Context, string, string) error
@@ -67,6 +68,24 @@ func (g *ZeebeGateway) StartProcess(ctx context.Context, request domain.StartPro
 		ProcessDefinitionKey: strconv.FormatInt(r.ProcessDefinitionKey, 10),
 		ProcessInstanceKey:   strconv.FormatInt(r.ProcessInstanceKey, 10),
 	}, nil
+}
+
+func (g *ZeebeGateway) Deploy(ctx context.Context, name string, content []byte) (domain.Deployment, error) {
+	resp, err := g.client.NewDeployResourceCommand().AddResource(content, name).Send(ctx)
+	if err != nil {
+		return domain.Deployment{}, err
+	}
+	out := domain.Deployment{DeploymentKey: strconv.FormatInt(resp.Key, 10)}
+	for _, resource := range resp.Deployments {
+		if process := resource.GetProcess(); process != nil {
+			out.Processes = append(out.Processes, domain.DeployedProcess{
+				BPMNProcessID:        process.BpmnProcessId,
+				Version:              process.Version,
+				ProcessDefinitionKey: strconv.FormatInt(process.ProcessDefinitionKey, 10),
+			})
+		}
+	}
+	return out, nil
 }
 
 func (g *ZeebeGateway) Close() error { return g.client.Close() }

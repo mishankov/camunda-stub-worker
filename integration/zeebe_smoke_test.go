@@ -30,22 +30,24 @@ func TestZeebe825Smoke(t *testing.T) {
 	if len(top.Brokers) == 0 || !strings.HasPrefix(top.Brokers[0].Version, "8.5.25") {
 		t.Fatalf("expected Zeebe 8.5.25, got %+v", top.Brokers)
 	}
-	deploy := client.NewDeployResourceCommand()
-	for _, name := range []string{"success.bpmn", "business-error.bpmn", "technical-failure.bpmn"} {
-		raw, e := os.ReadFile("bpmn/" + name)
-		if e != nil {
-			t.Fatal(e)
-		}
-		deploy.AddResource(raw, name)
-	}
-	if _, err = deploy.Send(ctx); err != nil {
-		t.Fatal(err)
-	}
 	g, err := gateway.ZeebeFactory{}.Connect(domain.Profile{Host: "localhost", Port: 26500})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer g.Close()
+	for _, name := range []string{"success.bpmn", "business-error.bpmn", "technical-failure.bpmn"} {
+		raw, e := os.ReadFile("bpmn/" + name)
+		if e != nil {
+			t.Fatal(e)
+		}
+		deployment, e := g.Deploy(ctx, name, raw)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if len(deployment.Processes) != 1 || deployment.Processes[0].Version != 1 {
+			t.Fatalf("unexpected deployment from %s: %+v", name, deployment.Processes)
+		}
+	}
 	cases := []struct {
 		process, jobType string
 		respond          func(string) error

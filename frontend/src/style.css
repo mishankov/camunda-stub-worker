@@ -282,6 +282,7 @@ tbody tr:hover { background: #202427; }
 .process-result dl { display: grid; grid-template-columns: 180px 1fr; gap: 10px; font-size: 13px; }
 .process-result dd { margin: 0; overflow-wrap: anywhere; }
 
+.process-form + .empty { margin-top: 24px; }
 .process-task-heading { margin-top: 24px; }
 .process-task-heading .hint { margin: 6px 0 0; }
 .process-tasks { display: grid; gap: 14px; }
@@ -316,6 +317,9 @@ tbody tr:hover { background: #202427; }
 
 
 .process-overview-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.process-selection { display: grid; gap: 12px; }
+.process-selection-messages { display: grid; gap: 8px; }
+.process-selection-messages > p, .process-selection-messages > .inline-error { margin: 0; }
 .process-selection-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .process-selection-actions .actions { flex-wrap: wrap; }
 .process-selection-actions > button { margin-left: auto; flex-shrink: 0; }

@@ -119,6 +119,65 @@ func TestImportIsIndependent(t *testing.T) {
 	}
 }
 
+func TestAttemptsForJobType(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	profiles, _ := s.Profiles(ctx)
+	p := profiles[0]
+	cfgA, err := s.SaveJobType(ctx, domain.JobTypeConfig{ProfileID: p.ID, JobType: "a", Mode: domain.ModeManual, MaxActiveJobs: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgB, err := s.SaveJobType(ctx, domain.JobTypeConfig{ProfileID: p.ID, JobType: "b", Mode: domain.ModeAuto, MaxActiveJobs: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"act-0", "act-1", "act-2"}
+	cfgs := []domain.JobTypeConfig{cfgA, cfgA, cfgB}
+	for i, cfg := range cfgs {
+		a := domain.Activation{ID: ids[i], ProfileID: p.ID, JobTypeConfigID: cfg.ID, JobKey: "k", JobType: cfg.JobType, Mode: cfg.Mode, InputJSON: `{"in":1}`, ActivationState: domain.ActivationActive, SendStatus: domain.SendNotPrepared, ReceivedAt: domain.UTCNow(), ConfirmedDeadlineAt: domain.UTCNow(), ProfileSnapshotJSON: `{}`}
+		if err = s.InsertActivation(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+		attempt, err := s.BeginAttempt(ctx, ids[i], string(domain.OutcomeSuccess), `{"outcome":"success","variablesJson":"{\"out\":1}"}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.FinishAttempt(ctx, attempt.ID, ids[i], domain.SendConfirmed, "", "", 5); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Fix the attempt timestamps so the newest-first order is deterministic.
+	for _, row := range []struct{ id, at string }{{"act-0", "2026-01-01T00:00:00Z"}, {"act-1", "2026-01-01T00:00:02Z"}, {"act-2", "2026-01-01T00:00:01Z"}} {
+		if _, err = s.db.ExecContext(ctx, `UPDATE response_attempts SET started_at=? WHERE activation_id=?`, row.at, row.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := s.AttemptsForJobType(ctx, cfgA.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries=%v", entries)
+	}
+	for _, e := range entries {
+		if e.JobType != "a" || e.InputContext != `{"in":1}` || e.OutputContext != `{"out":1}` || e.ResponseType != "complete" || e.CallType != domain.ModeManual {
+			t.Fatalf("entry=%+v", e)
+		}
+	}
+	if entries[0].Time != "2026-01-01T00:00:02Z" {
+		t.Fatalf("newest first expected act-1, got %v", entries[0])
+	}
+	limited, err := s.AttemptsForJobType(ctx, cfgA.ID, 1)
+	if err != nil || len(limited) != 1 || limited[0].Time != "2026-01-01T00:00:02Z" {
+		t.Fatalf("limited=%v err=%v", limited, err)
+	}
+}
+
 func TestOperateURLMigrationAndPersistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	s, err := Open(path)

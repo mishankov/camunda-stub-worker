@@ -199,6 +199,31 @@ type HistoryPage struct {
 	Total    int          `json:"total"`
 }
 
+// CallHistoryEntry describes one response command sent by the emulated worker.
+// Entries are derived from the persisted response_attempts records.
+type CallHistoryEntry struct {
+	Time               string  `json:"time"`
+	JobType            string  `json:"jobType"`
+	ProcessInstanceKey string  `json:"processInstanceKey"`
+	InputContext       string  `json:"inputContext"`
+	OutputContext      string  `json:"outputContext"`
+	CallType           JobMode `json:"type"`
+	ResponseType       string  `json:"responseType"`
+}
+
+// ResponseCommand maps a draft outcome to the Zeebe response command name.
+func ResponseCommand(o Outcome) string {
+	switch o {
+	case OutcomeSuccess:
+		return "complete"
+	case OutcomeBusinessError:
+		return "throwError"
+	case OutcomeTechnicalFail:
+		return "fail"
+	}
+	return ""
+}
+
 type Bootstrap struct {
 	AppVersion        string             `json:"appVersion"`
 	Profiles          []Profile          `json:"profiles"`

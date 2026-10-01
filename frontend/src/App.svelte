@@ -13,6 +13,7 @@
   type RuntimeState = { configId:string; state:string; activeJobs:number; lastError:string }
   type Activation = { id:string; jobTypeConfigId:string; jobKey:string; jobType:string; mode:'manual'|'auto'; processInstanceKey:string; bpmnProcessId:string; processDefinitionKey:string; elementId:string; retries:number; inputJson:string; customHeadersJson:string; scenarioSnapshotJson:string; draftJson:string; sendStatus:string; activationState:string; activationStateReason:string; receivedAt:string }
   type Draft = { outcome:'success'|'business_error'|'technical_failure'; variablesJson:string; errorCode:string; errorMessage:string; remainingRetries:number; retryBackoffMs:number }
+  type CallHistoryItem = { time:string; jobType:string; processInstanceKey:string; inputContext:string; outputContext:string; type:'manual'|'auto'; responseType:'complete'|'throwError'|'fail' }
   type Confirmation = { title:string; message:string; target?:string; confirmLabel:string; action:()=>Promise<void> }
   type UpdateInfo = { currentVersion:string; latestVersion:string; updateAvailable:boolean; releaseUrl:string }
 
@@ -78,6 +79,7 @@
   let loading = true, busy = false, error = ''
   let errorTimer:number|undefined
   let profiles:Profile[] = [], selectedProfileId = '', jobTypes:JobType[] = [], scenarios:Scenario[] = [], runtime:RuntimeState[] = [], pending:Activation[] = []
+  let jobCallHistory:Record<string,CallHistoryItem[]> = {}
   let connection:any = { state:'offline', message:'Connection not checked', selectedVersion:'8.5' }
   let dataPath = ''
   let refreshingLiveState = false
@@ -258,6 +260,7 @@
     })
   }
 
+  async function loadJobCallHistory(typeId:string){try{jobCallHistory={...jobCallHistory,[typeId]:await call<CallHistoryItem[]>('JobCallHistory',typeId)||[]}}catch{}}
   async function loadHistory(page=1){historyPage=page;history=await call('History',{profileId:selectedProfileId,jobType:historyType,outcome:historyOutcome,sendStatus:historyStatus,search:historySearch,fromUtc:historyFrom?new Date(historyFrom+'T00:00:00').toISOString():'',toUtc:historyTo?new Date(historyTo+'T23:59:59.999').toISOString():'',page})}
   function queueHistoryRefresh(){
     if(tab!=='history')return
@@ -319,7 +322,7 @@
   }
   async function openReleasesPage(){await call('OpenReleasesPage')}
 
-  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().then(()=>checkForUpdates()).catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
+  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh();if(jobCallHistory[a.jobTypeConfigId])void loadJobCallHistory(a.jobTypeConfigId)}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh();if(jobCallHistory[a.jobTypeConfigId])void loadJobCallHistory(a.jobTypeConfigId)}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().then(()=>checkForUpdates()).catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
 </script>
 
 {#snippet workerCard(task:ProcessTask, type:JobType|undefined, waiting:Activation[], cardKey:string, description='')}
@@ -341,6 +344,12 @@
                 {#if type&&!task.dynamic}{#if worker.state==='running'||worker.state==='stopping'}<button class="worker-stop with-icon" disabled={busy||workerCommandIds.includes(type.id)} on:click={()=>stopType(type.id)}><Square size={12}/> Stop worker</button>{:else}<button class="worker-start with-icon" disabled={busy||savingWorkerIds.includes(type.id)||workerCommandIds.includes(type.id)} on:click={()=>startType(type.id)}><Play size={12}/> Start worker</button>{/if}{:else if !task.dynamic}<button class="worker-start with-icon" disabled={busy} on:click={()=>startTaskWorker(task)}><Play size={12}/> Start worker</button>{/if}
               </div>
               {#if waiting.length}<div class="task-pending" id={`pending-task-${cardKey}`} hidden={!expandedPendingTasks[cardKey]}>{@render pendingQueue(waiting,cardKey,true)}</div>{/if}
+              {#if type&&!task.dynamic}{@const callEntries=jobCallHistory[type.id]||[]}
+              <details class="call-history">
+                <summary on:click={()=>{if(!jobCallHistory[type.id])void loadJobCallHistory(type.id)}}>Call history <span class="call-history-count">{callEntries.length}</span></summary>
+                {#if callEntries.length}<div class="table-wrap"><table><thead><tr><th>Time</th><th>Process instance</th><th>Input context</th><th>Output context</th><th>Type</th><th>Response</th></tr></thead><tbody>{#each callEntries as entry, i (i+'|'+entry.time)}<tr><td>{fmtDate(entry.time)}</td><td><code>{entry.processInstanceKey}</code></td><td><code class="ctx" title={entry.inputContext}>{entry.inputContext}</code></td><td><code class="ctx" title={entry.outputContext}>{entry.outputContext}</code></td><td>{entry.type==='auto'?'Automatic':'Manual'}</td><td><span class="send {entry.responseType}">{entry.responseType}</span></td></tr>{/each}</tbody></table></div>{:else}<p class="hint">No calls recorded yet</p>{/if}
+              </details>
+              {/if}
             </article>
 {/snippet}
 

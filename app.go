@@ -337,6 +337,11 @@ func (a *App) SubmitResponse(id string, d domain.ResponseDraft) (domain.Response
 func (a *App) History(q domain.HistoryQuery) (domain.HistoryPage, error) {
 	return a.store.History(context.Background(), q)
 }
+// JobCallHistory returns the persisted call history for one job type,
+// derived from response attempts, newest first.
+func (a *App) JobCallHistory(jobTypeConfigID string) ([]domain.CallHistoryEntry, error) {
+	return a.store.AttemptsForJobType(context.Background(), jobTypeConfigID, 50)
+}
 func (a *App) Attempts(activationID string) ([]domain.ResponseAttempt, error) {
 	return a.store.Attempts(context.Background(), activationID)
 }

@@ -147,6 +147,34 @@ func TestUnavailableAfterSendBecomesUnknown(t *testing.T) {
 	}
 }
 
+func TestSubmitPersistsCallHistory(t *testing.T) {
+	m, s, _, a := setupLive(t, nil)
+	defer s.Close()
+	defer m.Close()
+	d := domain.ResponseDraft{Outcome: domain.OutcomeSuccess, VariablesJSON: `{"out":1}`}
+	if _, err := m.Submit(context.Background(), a.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := s.Attempts(context.Background(), a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("attempts=%v", attempts)
+	}
+	entries, err := s.AttemptsForJobType(context.Background(), a.JobTypeConfigID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries=%v", entries)
+	}
+	entry := entries[0]
+	if entry.JobType != "test" || entry.ProcessInstanceKey != a.ProcessInstanceKey || entry.InputContext != a.InputJSON || entry.OutputContext != d.VariablesJSON || entry.CallType != domain.ModeManual || entry.ResponseType != "complete" || entry.Time == "" {
+		t.Fatalf("entry=%+v", entry)
+	}
+}
+
 func TestStopCancelsActivePoll(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {

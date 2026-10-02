@@ -13,6 +13,7 @@
   type RuntimeState = { configId:string; state:string; activeJobs:number; lastError:string }
   type Activation = { id:string; jobTypeConfigId:string; jobKey:string; jobType:string; mode:'manual'|'auto'; processInstanceKey:string; bpmnProcessId:string; processDefinitionKey:string; elementId:string; retries:number; inputJson:string; customHeadersJson:string; scenarioSnapshotJson:string; draftJson:string; sendStatus:string; activationState:string; activationStateReason:string; receivedAt:string }
   type Draft = { outcome:'success'|'business_error'|'technical_failure'; variablesJson:string; errorCode:string; errorMessage:string; remainingRetries:number; retryBackoffMs:number }
+  type CallHistoryItem = { activationId:string; time:string; jobType:string; processInstanceKey:string; inputContext:string; outputContext:string; type:'manual'|'auto'; responseType:''|'complete'|'throwError'|'fail'; sendStatus:string; activationState:string }
   type Confirmation = { title:string; message:string; target?:string; confirmLabel:string; action:()=>Promise<void> }
   type UpdateInfo = { currentVersion:string; latestVersion:string; updateAvailable:boolean; releaseUrl:string }
 
@@ -43,6 +44,7 @@
     if(!type){
       type=await call<JobType>('SaveJobType',{id:'',profileId:selectedProfileId,jobType:task.jobType,description:'',mode:'manual',activeScenarioId:null,maxActiveJobs:1})
       jobTypes=[...jobTypes,type]
+      void loadJobCallHistory(type.id)
     }
     return type
   }
@@ -78,6 +80,9 @@
   let loading = true, busy = false, error = ''
   let errorTimer:number|undefined
   let profiles:Profile[] = [], selectedProfileId = '', jobTypes:JobType[] = [], scenarios:Scenario[] = [], runtime:RuntimeState[] = [], pending:Activation[] = []
+  let jobCallHistory:Record<string,CallHistoryItem[]> = {}
+  let jobCallHistoryErrors:Record<string,string> = {}
+  let jobCallHistoryRequests:Record<string,number> = {}
   let connection:any = { state:'offline', message:'Connection not checked', selectedVersion:'8.5' }
   let dataPath = ''
   let refreshingLiveState = false
@@ -121,7 +126,7 @@
   function showError(message:string) { error=message; if(errorTimer)window.clearTimeout(errorTimer);errorTimer=message?window.setTimeout(()=>{error='';errorTimer=undefined},notificationDurationMs):undefined }
 
   async function run(fn:()=>Promise<any>) { showError(''); busy=true; try { await fn() } catch(e:any) { showError(e?.message || String(e)) } finally { busy=false } }
-  async function reload() { const b = await call<any>('Bootstrap'); appVersion=b.appVersion||''; profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false }
+  async function reload() { const b = await call<any>('Bootstrap'); appVersion=b.appVersion||''; profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false;void Promise.all(jobTypes.map(type=>loadJobCallHistory(type.id))) }
   async function refreshLiveState() { if(refreshingLiveState)return;refreshingLiveState=true;try{const b=await call<any>('Bootstrap');runtime=b.runtime||[];connection=b.connection;pending=b.pending||[];for(const a of pending)if(!drafts[a.id]){drafts[a.id]=parseDraft(a);try{draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||''}catch{draftScenarios[a.id]=''}}}catch{}finally{refreshingLiveState=false} }
   async function selectProfile(event:Event) {
     const select=event.currentTarget as HTMLSelectElement
@@ -258,6 +263,16 @@
     })
   }
 
+  async function loadJobCallHistory(typeId:string){
+    const request=(jobCallHistoryRequests[typeId]||0)+1
+    jobCallHistoryRequests[typeId]=request
+    jobCallHistoryErrors={...jobCallHistoryErrors,[typeId]:''}
+    try{
+      const entries=await call<CallHistoryItem[]>('JobCallHistory',typeId)||[]
+      if(jobCallHistoryRequests[typeId]===request)jobCallHistory={...jobCallHistory,[typeId]:entries}
+    }
+    catch(e:any){if(jobCallHistoryRequests[typeId]===request)jobCallHistoryErrors={...jobCallHistoryErrors,[typeId]:e?.message||String(e)}}
+  }
   async function loadHistory(page=1){historyPage=page;history=await call('History',{profileId:selectedProfileId,jobType:historyType,outcome:historyOutcome,sendStatus:historyStatus,search:historySearch,fromUtc:historyFrom?new Date(historyFrom+'T00:00:00').toISOString():'',toUtc:historyTo?new Date(historyTo+'T23:59:59.999').toISOString():'',page})}
   function queueHistoryRefresh(){
     if(tab!=='history')return
@@ -279,13 +294,28 @@
       refreshingHistory=false
     }
   }
+  async function openCallHistory(entry:CallHistoryItem){
+    if(busy)return
+    await run(async()=>{
+      const activation=await call<Activation>('Activation',entry.activationId)
+      await openHistory(activation)
+    })
+  }
   async function openHistory(a:Activation){
     const request=++attemptsRequest;selectedHistory=a;attempts=[];attemptsLoading=true;attemptsError=''
     try {const result=await call<any[]>('Attempts',a.id);if(request===attemptsRequest&&selectedHistory===a)attempts=result||[]}
     catch(e:any){if(request===attemptsRequest&&selectedHistory===a)attemptsError=e?.message||String(e)}
     finally {if(request===attemptsRequest)attemptsLoading=false}
   }
-  function requestClearHistory(){confirmation={title:'Clear completed history?',message:'Completed activation records for this profile will be deleted. Active records will be preserved.',confirmLabel:'Clear history',action:async()=>{await call('ClearHistory',selectedProfileId,true);await loadHistory(1)}}}
+  function requestClearHistory(){
+    confirmation={title:'Clear completed history?',message:'Completed activation records for this profile will be deleted. Active records will be preserved.',confirmLabel:'Clear history',action:async()=>{
+      await call('ClearHistory',selectedProfileId,true)
+      const typeIds=jobTypes.map(type=>type.id)
+      for(const id of typeIds)delete jobCallHistory[id]
+      jobCallHistory={...jobCallHistory}
+      await Promise.all([loadHistory(1),...typeIds.map(id=>loadJobCallHistory(id))])
+    }}
+  }
   async function confirmAction(){const pending=confirmation;if(!pending)return;await runModal(pending,pending.confirmLabel.startsWith('Delete')?'Deleting…':'Clearing…',async()=>{await pending.action();if(confirmation===pending)confirmation=null})}
 
   function authForProfile(profile:Profile|undefined):OperateAuth {return {mode:profile?.operateAuthMode||'none',username:profile?.operateUsername||'',password:profile?.operatePassword||'',token:profile?.operateToken||''}}
@@ -319,7 +349,7 @@
   }
   async function openReleasesPage(){await call('OpenReleasesPage')}
 
-  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh()}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh()}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().then(()=>checkForUpdates()).catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
+  onMount(()=>{const offs=[on('runtime:changed',(v)=>runtime=v),on('connection:changed',(v)=>connection=v),on('activation:created',(a)=>{if(a.mode==='manual'){pending=[...pending,a];drafts[a.id]=parseDraft(a)}queueHistoryRefresh();if(jobTypes.some(type=>type.id===a.jobTypeConfigId))void loadJobCallHistory(a.jobTypeConfigId)}),on('activation:changed',(a)=>{const keep=a.mode==='manual'&&a.activationState==='active';pending=keep?(pending.some(x=>x.id===a.id)?pending.map(x=>x.id===a.id?a:x):[...pending,a]):pending.filter(x=>x.id!==a.id);queueHistoryRefresh();if(jobTypes.some(type=>type.id===a.jobTypeConfigId))void loadJobCallHistory(a.jobTypeConfigId)}),on('storage:error',(v)=>showError('SQLite: '+v))];const liveTimer=window.setInterval(()=>void refreshLiveState(),1500);void reload().then(()=>checkForUpdates()).catch((e:any)=>{showError(e?.message||String(e));loading=false});return()=>{window.clearInterval(liveTimer);if(historyRefreshTimer!==undefined)window.clearTimeout(historyRefreshTimer);if(errorTimer)window.clearTimeout(errorTimer);offs.forEach(f=>f())}})
 </script>
 
 {#snippet workerCard(task:ProcessTask, type:JobType|undefined, waiting:Activation[], cardKey:string, description='')}
@@ -341,6 +371,36 @@
                 {#if type&&!task.dynamic}{#if worker.state==='running'||worker.state==='stopping'}<button class="worker-stop with-icon" disabled={busy||workerCommandIds.includes(type.id)} on:click={()=>stopType(type.id)}><Square size={12}/> Stop worker</button>{:else}<button class="worker-start with-icon" disabled={busy||savingWorkerIds.includes(type.id)||workerCommandIds.includes(type.id)} on:click={()=>startType(type.id)}><Play size={12}/> Start worker</button>{/if}{:else if !task.dynamic}<button class="worker-start with-icon" disabled={busy} on:click={()=>startTaskWorker(task)}><Play size={12}/> Start worker</button>{/if}
               </div>
               {#if waiting.length}<div class="task-pending" id={`pending-task-${cardKey}`} hidden={!expandedPendingTasks[cardKey]}>{@render pendingQueue(waiting,cardKey,true)}</div>{/if}
+              {#if type&&!task.dynamic}{@const callEntries=jobCallHistory[type.id]||[]}
+              <details class="call-history">
+                <summary on:click={()=>{if(!jobCallHistory[type.id])void loadJobCallHistory(type.id)}}>Call history{#if jobCallHistory[type.id]}{' '}<span class="call-history-count">{callEntries.length}</span>{/if}</summary>
+                {#if jobCallHistoryErrors[type.id]}<div class="inline-error" role="alert">Call history could not be loaded: {jobCallHistoryErrors[type.id]} <button class="link" on:click={()=>loadJobCallHistory(type.id)}>Retry</button></div>{/if}
+                {#if !jobCallHistory[type.id]&&!jobCallHistoryErrors[type.id]}
+                  <p class="hint" role="status">Loading call history…</p>
+                {:else if callEntries.length}
+                  <div class="table-wrap"><table>
+                    <thead><tr><th>Time</th><th>Process instance</th><th>Input context</th><th>Output context</th><th>Type</th><th>Response</th><th>Status</th></tr></thead>
+                    <tbody>{#each callEntries as entry, i (i+'|'+entry.time)}
+                      <tr on:click={()=>openCallHistory(entry)}>
+                        <td><button class="link history-open" disabled={busy} aria-label={`View ${entry.jobType} activation from ${fmtDate(entry.time)}`}>{fmtDate(entry.time)}</button></td>
+                        <td><code>{entry.processInstanceKey}</code></td>
+                        <td><code class="ctx" title={entry.inputContext}>{entry.inputContext}</code></td>
+                        <td><code class="ctx" title={entry.outputContext}>{entry.outputContext||'—'}</code></td>
+                        <td>{entry.type==='auto'?'Automatic':'Manual'}</td>
+                        <td>{entry.responseType||'—'}</td>
+                        <td>
+                          {#if !entry.responseType&&entry.activationState==='expired_or_unconfirmed'}
+                            <span class="send unknown">Expired without response</span>
+                          {:else if !entry.responseType&&entry.activationState==='interrupted'}
+                            <span class="send unknown">Interrupted without response</span>
+                          {:else}<span class="send {entry.sendStatus}">{sendLabel(entry.sendStatus)}</span>{/if}
+                        </td>
+                      </tr>
+                    {/each}</tbody>
+                  </table></div>
+                {:else if jobCallHistory[type.id]}<p class="hint">No calls recorded yet</p>{/if}
+              </details>
+              {/if}
             </article>
 {/snippet}
 

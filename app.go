@@ -337,6 +337,15 @@ func (a *App) SubmitResponse(id string, d domain.ResponseDraft) (domain.Response
 func (a *App) History(q domain.HistoryQuery) (domain.HistoryPage, error) {
 	return a.store.History(context.Background(), q)
 }
+
+// JobCallHistory returns incoming calls and response attempts for one job type,
+// newest first.
+func (a *App) JobCallHistory(jobTypeConfigID string) ([]domain.CallHistoryEntry, error) {
+	return a.store.CallHistoryForJobType(context.Background(), jobTypeConfigID, 50)
+}
+func (a *App) Activation(activationID string) (domain.Activation, error) {
+	return a.store.Activation(context.Background(), activationID)
+}
 func (a *App) Attempts(activationID string) ([]domain.ResponseAttempt, error) {
 	return a.store.Attempts(context.Background(), activationID)
 }

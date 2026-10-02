@@ -315,6 +315,13 @@ tbody tr:hover { background: #202427; }
 .task-pending { padding: 0 0 16px; }
 .task-pending[hidden] { display: none; }
 
+.call-history { padding: 0 0 16px; }
+.call-history summary { cursor: pointer; color: var(--text-action); padding: 6px 0; font-size: 13px; font-weight: 600; }
+.call-history .call-history-count { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.call-history .table-wrap { margin-top: 4px; }
+.call-history .history-open { min-height: 0; padding: 0; font: inherit; }
+.call-history .ctx { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-history .hint { margin: 4px 0 0; }
 
 .process-overview-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .process-selection { display: grid; gap: 12px; }

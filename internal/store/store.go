@@ -633,6 +633,34 @@ func (s *Store) Attempts(ctx context.Context, activationID string) ([]domain.Res
 	return out, rows.Err()
 }
 
+// CallHistoryForJobType returns response attempts and incoming calls without
+// attempts for the job type, newest first.
+func (s *Store) CallHistoryForJobType(ctx context.Context, jobTypeConfigID string, limit int) ([]domain.CallHistoryEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT ac.id, COALESCE(a.started_at,ac.received_at), ac.job_type, ac.process_instance_key, ac.input_json,
+		CASE WHEN a.id IS NULL THEN '' ELSE COALESCE(json_extract(a.payload_json,'$.variablesJson'),'{}') END,
+		ac.mode, COALESCE(a.command,''), COALESCE(a.status,ac.send_status), ac.activation_state
+		FROM activations ac LEFT JOIN response_attempts a ON ac.id=a.activation_id
+		WHERE ac.job_type_config_id=? ORDER BY COALESCE(a.started_at,ac.received_at) DESC, ac.id DESC, a.sequence DESC LIMIT ?`, jobTypeConfigID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.CallHistoryEntry{}
+	for rows.Next() {
+		var e domain.CallHistoryEntry
+		var command string
+		if err = rows.Scan(&e.ActivationID, &e.Time, &e.JobType, &e.ProcessInstanceKey, &e.InputContext, &e.OutputContext, &e.CallType, &command, &e.SendStatus, &e.ActivationState); err != nil {
+			return nil, err
+		}
+		e.ResponseType = domain.ResponseCommand(domain.Outcome(command))
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) ClearHistory(ctx context.Context, profileID string, before string) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM activations WHERE profile_id=? AND activation_state!='active' AND received_at<?`, profileID, before)
 	if err != nil {

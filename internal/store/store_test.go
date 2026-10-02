@@ -119,6 +119,158 @@ func TestImportIsIndependent(t *testing.T) {
 	}
 }
 
+func TestCallHistoryForJobType(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	profiles, _ := s.Profiles(ctx)
+	p := profiles[0]
+	cfgA, err := s.SaveJobType(ctx, domain.JobTypeConfig{ProfileID: p.ID, JobType: "a", Mode: domain.ModeManual, MaxActiveJobs: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgB, err := s.SaveJobType(ctx, domain.JobTypeConfig{ProfileID: p.ID, JobType: "b", Mode: domain.ModeAuto, MaxActiveJobs: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"act-0", "act-1", "act-2"}
+	cfgs := []domain.JobTypeConfig{cfgA, cfgA, cfgB}
+	for i, cfg := range cfgs {
+		a := domain.Activation{ID: ids[i], ProfileID: p.ID, JobTypeConfigID: cfg.ID, JobKey: "k", JobType: cfg.JobType, Mode: cfg.Mode, InputJSON: `{"in":1}`, ActivationState: domain.ActivationActive, SendStatus: domain.SendNotPrepared, ReceivedAt: domain.UTCNow(), ConfirmedDeadlineAt: domain.UTCNow(), ProfileSnapshotJSON: `{}`}
+		if err = s.InsertActivation(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+		attempt, err := s.BeginAttempt(ctx, ids[i], string(domain.OutcomeSuccess), `{"outcome":"success","variablesJson":"{\"out\":1}"}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.FinishAttempt(ctx, attempt.ID, ids[i], domain.SendConfirmed, "", "", 5); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Fix the attempt timestamps so the newest-first order is deterministic.
+	for _, row := range []struct{ id, at string }{{"act-0", "2026-01-01T00:00:00Z"}, {"act-1", "2026-01-01T00:00:02Z"}, {"act-2", "2026-01-01T00:00:01Z"}} {
+		if _, err = s.db.ExecContext(ctx, `UPDATE response_attempts SET started_at=? WHERE activation_id=?`, row.at, row.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := s.CallHistoryForJobType(ctx, cfgA.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries=%v", entries)
+	}
+	for _, e := range entries {
+		if e.JobType != "a" || e.InputContext != `{"in":1}` || e.OutputContext != `{"out":1}` || e.ResponseType != "complete" || e.CallType != domain.ModeManual || e.SendStatus != domain.SendConfirmed || e.ActivationState != domain.ActivationFinished {
+			t.Fatalf("entry=%+v", e)
+		}
+		activation, err := s.Activation(ctx, e.ActivationID)
+		if err != nil || activation.JobTypeConfigID != cfgA.ID {
+			t.Fatalf("call history activation=%+v err=%v", activation, err)
+		}
+	}
+	if entries[0].ActivationID != "act-1" || entries[1].ActivationID != "act-0" || entries[0].Time != "2026-01-01T00:00:02Z" {
+		t.Fatalf("newest first expected act-1, got %v", entries[0])
+	}
+	limited, err := s.CallHistoryForJobType(ctx, cfgA.ID, 1)
+	if err != nil || len(limited) != 1 || limited[0].Time != "2026-01-01T00:00:02Z" {
+		t.Fatalf("limited=%v err=%v", limited, err)
+	}
+}
+
+func TestCallHistoryIncludesUnansweredCalls(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	profiles, err := s.Profiles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.SaveJobType(ctx, domain.JobTypeConfig{ProfileID: profiles[0].ID, JobType: "test", Mode: domain.ModeManual, MaxActiveJobs: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := []domain.ActivationState{domain.ActivationActive, domain.ActivationExpired, domain.ActivationInterrupted}
+	for _, state := range states {
+		a := domain.Activation{ID: string(state), ProfileID: cfg.ProfileID, JobTypeConfigID: cfg.ID, JobKey: "job", JobType: cfg.JobType, Mode: cfg.Mode, InputJSON: `{"in":1}`, ActivationState: state, SendStatus: domain.SendNotPrepared, ReceivedAt: "2026-01-01T00:00:00Z", ConfirmedDeadlineAt: "2026-01-01T00:01:00Z", ProfileSnapshotJSON: `{}`}
+		if err = s.InsertActivation(ctx, a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := s.CallHistoryForJobType(ctx, cfg.ID, 50)
+	if err != nil || len(entries) != len(states) {
+		t.Fatalf("entries=%v err=%v", entries, err)
+	}
+	for _, entry := range entries {
+		if entry.ActivationID != string(entry.ActivationState) || entry.Time != "2026-01-01T00:00:00Z" || entry.InputContext != `{"in":1}` || entry.ResponseType != "" || entry.OutputContext != "" || entry.SendStatus != domain.SendNotPrepared {
+			t.Fatalf("unanswered entry=%+v", entry)
+		}
+	}
+	// Beginning a response replaces the unanswered entry with its attempt.
+	if _, err = s.BeginAttempt(ctx, string(domain.ActivationActive), string(domain.OutcomeBusinessError), `{"variablesJson":"{}"}`); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = s.CallHistoryForJobType(ctx, cfg.ID, 50)
+	if err != nil || len(entries) != len(states) || entries[0].ActivationID != string(domain.ActivationActive) || entries[0].SendStatus != domain.SendSending || entries[0].ResponseType != "throwError" {
+		t.Fatalf("after sending: entries=%v err=%v", entries, err)
+	}
+	// Clearing completed history removes unanswered expired/interrupted calls,
+	// while the active call and its attempt remain inspectable.
+	deleted, err := s.ClearHistory(ctx, cfg.ProfileID, "2027-01-01T00:00:00Z")
+	if err != nil || deleted != 2 {
+		t.Fatalf("deleted=%d err=%v", deleted, err)
+	}
+	entries, err = s.CallHistoryForJobType(ctx, cfg.ID, 50)
+	if err != nil || len(entries) != 1 || entries[0].ActivationID != string(domain.ActivationActive) {
+		t.Fatalf("after clearing: entries=%v err=%v", entries, err)
+	}
+}
+
+func TestCallHistoryPreservesEachAttemptStatus(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	a := domain.Activation{ID: "activation", ProfileID: "profile", JobTypeConfigID: "config", JobKey: "job", JobType: "test", Mode: domain.ModeAuto, InputJSON: `{}`, ActivationState: domain.ActivationActive, SendStatus: domain.SendPrepared, ReceivedAt: domain.UTCNow(), ConfirmedDeadlineAt: domain.UTCNow(), ProfileSnapshotJSON: `{}`}
+	if err = s.InsertActivation(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []domain.SendStatus{domain.SendFailed, domain.SendConfirmed} {
+		attempt, err := s.BeginAttempt(ctx, a.ID, string(domain.OutcomeTechnicalFail), `{"variablesJson":"{\"out\":1}"}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = s.FinishAttempt(ctx, attempt.ID, a.ID, status, "", "", 5); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Identical timestamps exercise the sequence tie breaker for retries.
+	if _, err = s.db.ExecContext(ctx, `UPDATE response_attempts SET started_at='2026-01-01T00:00:00Z'`); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.CallHistoryForJobType(ctx, a.JobTypeConfigID, 50)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("entries=%v err=%v", entries, err)
+	}
+	if entries[0].SendStatus != domain.SendConfirmed || entries[1].SendStatus != domain.SendFailed {
+		t.Fatalf("retry must not overwrite earlier status: entries=%+v", entries)
+	}
+	for _, entry := range entries {
+		if entry.ResponseType != "fail" || entry.CallType != domain.ModeAuto || entry.OutputContext != `{"out":1}` {
+			t.Fatalf("entry=%+v", entry)
+		}
+	}
+}
+
 func TestOperateURLMigrationAndPersistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	s, err := Open(path)

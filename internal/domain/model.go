@@ -199,17 +199,19 @@ type HistoryPage struct {
 	Total    int          `json:"total"`
 }
 
-// CallHistoryEntry describes one response command sent by the emulated worker.
-// Entries are derived from the persisted response_attempts records.
+// CallHistoryEntry describes a response attempt or an incoming call that has
+// not had a response attempt yet.
 type CallHistoryEntry struct {
-	ActivationID       string  `json:"activationId"`
-	Time               string  `json:"time"`
-	JobType            string  `json:"jobType"`
-	ProcessInstanceKey string  `json:"processInstanceKey"`
-	InputContext       string  `json:"inputContext"`
-	OutputContext      string  `json:"outputContext"`
-	CallType           JobMode `json:"type"`
-	ResponseType       string  `json:"responseType"`
+	ActivationID       string          `json:"activationId"`
+	Time               string          `json:"time"`
+	JobType            string          `json:"jobType"`
+	ProcessInstanceKey string          `json:"processInstanceKey"`
+	InputContext       string          `json:"inputContext"`
+	OutputContext      string          `json:"outputContext"`
+	CallType           JobMode         `json:"type"`
+	ResponseType       string          `json:"responseType"`
+	SendStatus         SendStatus      `json:"sendStatus"`
+	ActivationState    ActivationState `json:"activationState"`
 }
 
 // ResponseCommand maps a draft outcome to the Zeebe response command name.

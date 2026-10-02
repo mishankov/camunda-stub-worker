@@ -162,7 +162,7 @@ func TestSubmitPersistsCallHistory(t *testing.T) {
 	if len(attempts) != 1 {
 		t.Fatalf("attempts=%v", attempts)
 	}
-	entries, err := s.AttemptsForJobType(context.Background(), a.JobTypeConfigID, 50)
+	entries, err := s.CallHistoryForJobType(context.Background(), a.JobTypeConfigID, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,8 +170,25 @@ func TestSubmitPersistsCallHistory(t *testing.T) {
 		t.Fatalf("entries=%v", entries)
 	}
 	entry := entries[0]
-	if entry.JobType != "test" || entry.ProcessInstanceKey != a.ProcessInstanceKey || entry.InputContext != a.InputJSON || entry.OutputContext != d.VariablesJSON || entry.CallType != domain.ModeManual || entry.ResponseType != "complete" || entry.Time == "" {
+	if entry.JobType != "test" || entry.ProcessInstanceKey != a.ProcessInstanceKey || entry.InputContext != a.InputJSON || entry.OutputContext != d.VariablesJSON || entry.CallType != domain.ModeManual || entry.ResponseType != "complete" || entry.Time == "" || entry.SendStatus != domain.SendConfirmed {
 		t.Fatalf("entry=%+v", entry)
+	}
+}
+
+func TestCallHistoryShowsUnknownSendOutcome(t *testing.T) {
+	m, s, _, a := setupLive(t, status.Error(codes.Unavailable, "connection lost"))
+	defer s.Close()
+	defer m.Close()
+	d := domain.ResponseDraft{Outcome: domain.OutcomeSuccess, VariablesJSON: `{}`}
+	if _, err := m.Submit(context.Background(), a.ID, d); err == nil {
+		t.Fatal("expected unknown-result error")
+	}
+	entries, err := s.CallHistoryForJobType(context.Background(), a.JobTypeConfigID, 50)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("entries=%v err=%v", entries, err)
+	}
+	if entries[0].ResponseType != "complete" || entries[0].SendStatus != domain.SendUnknown || entries[0].ActivationState != domain.ActivationExpired {
+		t.Fatalf("command name must not imply confirmation: entry=%+v", entries[0])
 	}
 }
 

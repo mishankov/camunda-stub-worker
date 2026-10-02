@@ -321,9 +321,6 @@ tbody tr:hover { background: #202427; }
 .call-history .table-wrap { margin-top: 4px; }
 .call-history .history-open { min-height: 0; padding: 0; font: inherit; }
 .call-history .ctx { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.call-history .send.complete { color: var(--success-text); }
-.call-history .send.throwError { color: var(--warning-text); }
-.call-history .send.fail { color: var(--danger-text); }
 .call-history .hint { margin: 4px 0 0; }
 
 .process-overview-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; }

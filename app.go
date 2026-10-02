@@ -338,10 +338,10 @@ func (a *App) History(q domain.HistoryQuery) (domain.HistoryPage, error) {
 	return a.store.History(context.Background(), q)
 }
 
-// JobCallHistory returns the persisted call history for one job type,
-// derived from response attempts, newest first.
+// JobCallHistory returns incoming calls and response attempts for one job type,
+// newest first.
 func (a *App) JobCallHistory(jobTypeConfigID string) ([]domain.CallHistoryEntry, error) {
-	return a.store.AttemptsForJobType(context.Background(), jobTypeConfigID, 50)
+	return a.store.CallHistoryForJobType(context.Background(), jobTypeConfigID, 50)
 }
 func (a *App) Activation(activationID string) (domain.Activation, error) {
 	return a.store.Activation(context.Background(), activationID)

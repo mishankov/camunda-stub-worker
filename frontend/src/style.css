@@ -319,8 +319,7 @@ tbody tr:hover { background: #202427; }
 .call-history summary { cursor: pointer; color: var(--text-action); padding: 6px 0; font-size: 13px; font-weight: 600; }
 .call-history .call-history-count { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 .call-history .table-wrap { margin-top: 4px; }
-.call-history tbody tr { cursor: default; }
-.call-history tbody tr:hover { background: transparent; }
+.call-history .history-open { min-height: 0; padding: 0; font: inherit; }
 .call-history .ctx { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .call-history .send.complete { color: var(--success-text); }
 .call-history .send.throwError { color: var(--warning-text); }

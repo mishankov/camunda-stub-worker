@@ -639,7 +639,7 @@ func (s *Store) AttemptsForJobType(ctx context.Context, jobTypeConfigID string, 
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT a.started_at, ac.job_type, ac.process_instance_key, ac.input_json,
+	rows, err := s.db.QueryContext(ctx, `SELECT ac.id, a.started_at, ac.job_type, ac.process_instance_key, ac.input_json,
 		COALESCE(json_extract(a.payload_json,'$.variablesJson'),'{}'), ac.mode, a.command
 		FROM response_attempts a JOIN activations ac ON ac.id=a.activation_id
 		WHERE ac.job_type_config_id=? ORDER BY a.started_at DESC, a.sequence DESC LIMIT ?`, jobTypeConfigID, limit)
@@ -651,7 +651,7 @@ func (s *Store) AttemptsForJobType(ctx context.Context, jobTypeConfigID string, 
 	for rows.Next() {
 		var e domain.CallHistoryEntry
 		var command string
-		if err = rows.Scan(&e.Time, &e.JobType, &e.ProcessInstanceKey, &e.InputContext, &e.OutputContext, &e.CallType, &command); err != nil {
+		if err = rows.Scan(&e.ActivationID, &e.Time, &e.JobType, &e.ProcessInstanceKey, &e.InputContext, &e.OutputContext, &e.CallType, &command); err != nil {
 			return nil, err
 		}
 		e.ResponseType = domain.ResponseCommand(domain.Outcome(command))

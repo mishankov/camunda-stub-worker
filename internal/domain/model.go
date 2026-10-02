@@ -202,6 +202,7 @@ type HistoryPage struct {
 // CallHistoryEntry describes one response command sent by the emulated worker.
 // Entries are derived from the persisted response_attempts records.
 type CallHistoryEntry struct {
+	ActivationID       string  `json:"activationId"`
 	Time               string  `json:"time"`
 	JobType            string  `json:"jobType"`
 	ProcessInstanceKey string  `json:"processInstanceKey"`

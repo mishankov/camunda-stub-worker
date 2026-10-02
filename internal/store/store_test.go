@@ -168,8 +168,12 @@ func TestAttemptsForJobType(t *testing.T) {
 		if e.JobType != "a" || e.InputContext != `{"in":1}` || e.OutputContext != `{"out":1}` || e.ResponseType != "complete" || e.CallType != domain.ModeManual {
 			t.Fatalf("entry=%+v", e)
 		}
+		activation, err := s.Activation(ctx, e.ActivationID)
+		if err != nil || activation.JobTypeConfigID != cfgA.ID {
+			t.Fatalf("call history activation=%+v err=%v", activation, err)
+		}
 	}
-	if entries[0].Time != "2026-01-01T00:00:02Z" {
+	if entries[0].ActivationID != "act-1" || entries[1].ActivationID != "act-0" || entries[0].Time != "2026-01-01T00:00:02Z" {
 		t.Fatalf("newest first expected act-1, got %v", entries[0])
 	}
 	limited, err := s.AttemptsForJobType(ctx, cfgA.ID, 1)

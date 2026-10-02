@@ -13,7 +13,7 @@
   type RuntimeState = { configId:string; state:string; activeJobs:number; lastError:string }
   type Activation = { id:string; jobTypeConfigId:string; jobKey:string; jobType:string; mode:'manual'|'auto'; processInstanceKey:string; bpmnProcessId:string; processDefinitionKey:string; elementId:string; retries:number; inputJson:string; customHeadersJson:string; scenarioSnapshotJson:string; draftJson:string; sendStatus:string; activationState:string; activationStateReason:string; receivedAt:string }
   type Draft = { outcome:'success'|'business_error'|'technical_failure'; variablesJson:string; errorCode:string; errorMessage:string; remainingRetries:number; retryBackoffMs:number }
-  type CallHistoryItem = { time:string; jobType:string; processInstanceKey:string; inputContext:string; outputContext:string; type:'manual'|'auto'; responseType:'complete'|'throwError'|'fail' }
+  type CallHistoryItem = { activationId:string; time:string; jobType:string; processInstanceKey:string; inputContext:string; outputContext:string; type:'manual'|'auto'; responseType:'complete'|'throwError'|'fail' }
   type Confirmation = { title:string; message:string; target?:string; confirmLabel:string; action:()=>Promise<void> }
   type UpdateInfo = { currentVersion:string; latestVersion:string; updateAvailable:boolean; releaseUrl:string }
 
@@ -291,6 +291,13 @@
       refreshingHistory=false
     }
   }
+  async function openCallHistory(entry:CallHistoryItem){
+    if(busy)return
+    await run(async()=>{
+      const activation=await call<Activation>('Activation',entry.activationId)
+      await openHistory(activation)
+    })
+  }
   async function openHistory(a:Activation){
     const request=++attemptsRequest;selectedHistory=a;attempts=[];attemptsLoading=true;attemptsError=''
     try {const result=await call<any[]>('Attempts',a.id);if(request===attemptsRequest&&selectedHistory===a)attempts=result||[]}
@@ -357,7 +364,7 @@
               <details class="call-history">
                 <summary on:click={()=>{if(!jobCallHistory[type.id])void loadJobCallHistory(type.id)}}>Call history{#if jobCallHistory[type.id]}{' '}<span class="call-history-count">{callEntries.length}</span>{/if}</summary>
                 {#if jobCallHistoryErrors[type.id]}<div class="inline-error" role="alert">Call history could not be loaded: {jobCallHistoryErrors[type.id]} <button class="link" on:click={()=>loadJobCallHistory(type.id)}>Retry</button></div>{/if}
-                {#if !jobCallHistory[type.id]&&!jobCallHistoryErrors[type.id]}<p class="hint" role="status">Loading call history…</p>{:else if callEntries.length}<div class="table-wrap"><table><thead><tr><th>Time</th><th>Process instance</th><th>Input context</th><th>Output context</th><th>Type</th><th>Response</th></tr></thead><tbody>{#each callEntries as entry, i (i+'|'+entry.time)}<tr><td>{fmtDate(entry.time)}</td><td><code>{entry.processInstanceKey}</code></td><td><code class="ctx" title={entry.inputContext}>{entry.inputContext}</code></td><td><code class="ctx" title={entry.outputContext}>{entry.outputContext}</code></td><td>{entry.type==='auto'?'Automatic':'Manual'}</td><td><span class="send {entry.responseType}">{entry.responseType}</span></td></tr>{/each}</tbody></table></div>{:else if jobCallHistory[type.id]}<p class="hint">No calls recorded yet</p>{/if}
+                {#if !jobCallHistory[type.id]&&!jobCallHistoryErrors[type.id]}<p class="hint" role="status">Loading call history…</p>{:else if callEntries.length}<div class="table-wrap"><table><thead><tr><th>Time</th><th>Process instance</th><th>Input context</th><th>Output context</th><th>Type</th><th>Response</th></tr></thead><tbody>{#each callEntries as entry, i (i+'|'+entry.time)}<tr on:click={()=>openCallHistory(entry)}><td><button class="link history-open" disabled={busy} aria-label={`View ${entry.jobType} activation from ${fmtDate(entry.time)}`}>{fmtDate(entry.time)}</button></td><td><code>{entry.processInstanceKey}</code></td><td><code class="ctx" title={entry.inputContext}>{entry.inputContext}</code></td><td><code class="ctx" title={entry.outputContext}>{entry.outputContext}</code></td><td>{entry.type==='auto'?'Automatic':'Manual'}</td><td><span class="send {entry.responseType}">{entry.responseType}</span></td></tr>{/each}</tbody></table></div>{:else if jobCallHistory[type.id]}<p class="hint">No calls recorded yet</p>{/if}
               </details>
               {/if}
             </article>

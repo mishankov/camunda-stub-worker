@@ -17,6 +17,7 @@ Use it to explore happy paths, business errors, and technical failures while dev
 - **Run automatically** with a selected response and optional delay.
 - **Review jobs manually** before editing and sending a response.
 - **Inspect input variables and custom headers** for activated jobs.
+- **Review call history on each worker** in Processes or Job types, with input/output variables, response commands, and send status.
 - **Search response history** by job key, process instance, job type, outcome, status, or date.
 - **Switch between local Camunda profiles** and import or export their configuration as JSON.
 - **Save Operate authentication** with each connection: username/password, bearer token, or no authentication.
@@ -36,7 +37,7 @@ Responses and worker settings are shared by job type within a connection. Editin
 
 The task list comes from the selected BPMN definition - from Operate, or from the model you deployed from disk - including tasks in embedded subprocesses. Called processes are configured separately. Expression-based job types are shown but must be configured by their resolved value in **Job types**. Pending jobs are manual jobs activated by this app, filtered to the selected process definition version.
 
-![Job types and their configured response scenarios](docs/images/job-types.jpg)
+![Job types with configured response scenarios and expanded call history](docs/images/job-types.jpg)
 
 ### Automatic mode
 
@@ -59,6 +60,12 @@ Manual mode places activated jobs under **Awaiting response**. You can inspect t
 | Technical failure | Fails the job with a message, absolute remaining retry count, and retry backoff | Incidents, retries, and unavailable dependencies |
 
 For a technical failure, `remainingRetries` is the absolute retry count sent to Zeebe. Reusing the same positive value may cause the job to be activated repeatedly.
+
+### Call history
+
+Expand **Call history** on a configured worker in **Processes** or **Job types** to see its latest 50 entries, newest first. Each row shows the time, process instance key, input and output variables, automatic or manual mode, response command (`complete`, `throwError`, or `fail`), and send status. Calls without a response attempt also appear, including waiting, expired, and interrupted jobs.
+
+Select a row to inspect the activation's input variables and send attempts, including the response payload and any diagnostics. This history is shared by job type across the current connection, so a process task can show calls from other processes using the same worker. Use the sidebar **History** screen to search and filter the full retained history. **Clear completed** removes completed records from both views and preserves active jobs.
 
 ## Install
 
@@ -169,10 +176,10 @@ For deployment, select **GitHub Actions** in the repository's **Settings → Pag
 Dependencies are pinned in `go.mod` and `frontend/package-lock.json`:
 
 - Go **1.25.0**
-- Wails **2.15.0**
-- Svelte **5.57.0**, Vite **8.3.0**, and TypeScript **5.9.2**
+- Wails runtime **2.16.0**; the build workflows use CLI **2.15.0**
+- Svelte **5.57.1**, Vite **8.3.1**, and TypeScript **5.9.2**
 - Camunda Go client / Zeebe protocol **8.5.25**
-- `modernc.org/sqlite` **1.58.0** (pure Go; no system SQLite dependency)
+- `modernc.org/sqlite` **1.59.0** (pure Go; no system SQLite dependency)
 
 The UI uses CodeMirror for JSON editing, syntax highlighting, and validation. Update checks run in the background against published GitHub Releases and display an in-app download notification when a newer version is available.
 
@@ -228,7 +235,7 @@ Deploy the models from the app (**Processes → Deploy from file…** for each f
 ## Verification
 
 - `go test -race ./...` passes on macOS arm64.
-- `npm run check` and the production frontend build pass.
-- A Wails 2.15.0 macOS arm64 `.app` builds and receives an ad-hoc signature.
+- Frontend tests, `npm run check`, and the production frontend build pass.
+- A macOS arm64 `.app` builds with Wails CLI 2.15.0 and runtime 2.16.0 and receives an ad-hoc signature.
 - `go test -tags integration -run TestZeebe825Smoke -v ./integration` passes against Zeebe 8.5.25. It covers all three bundled models, a success result containing `9007199254740993`, a business error, `FailJob`, and `UpdateJobTimeout`.
 - Windows x64, macOS x64, and Linux x64 builds are delegated to native CI runners and have not been executed locally in this environment.

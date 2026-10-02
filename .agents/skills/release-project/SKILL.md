@@ -31,7 +31,7 @@ Inspect the actual screenshot images and compare them with the current app. Imag
 
 Refresh only stale or misleading screenshots. Capture the current app with illustrative sample data and masked credentials, using a disposable profile/database. Do not expose real tokens, passwords, or private process data. Use real UI captures, not generated imitations. Copy each refreshed image to both locations and check that the copies match. Update captions, alt text, and references if filenames or content change. If capture is unavailable, explain what remains unverified rather than claiming completion.
 
-Preview with `python3 -m http.server 4173 --directory site` from the repository root (choose another port if occupied). Inspect the rendered site at desktop and narrow widths, Markdown image references, navigation, relative asset URLs, and download links. The site needs no build step. Run `git diff --check`. For app changes or app-backed capture, use the relevant checks from CI: `npm ci`, `npm run check`, and `npm run build` in `frontend/`, and `go test -race ./...` at the root. Report checks actually run and any limitations.
+Preview with `python3 -m http.server 4173 --directory site` from the repository root (choose another port if occupied). Inspect the rendered site at desktop and narrow widths, Markdown image references, navigation, relative asset URLs, and download links. The site needs no build step. Run `git diff --check`. For app changes, use the relevant checks from CI: `npm ci`, `npm run check`, and `npm run build` in `frontend/`, and `go test -race ./...` at the root. When capturing an unchanged app, reuse a verified build or build what the capture needs; documentation and screenshot changes alone do not require repeating the full app check suite. Report checks actually run or reused and any limitations.
 
 ## 2. Present changes for user review
 
@@ -47,17 +47,21 @@ After approval, commit only the reviewed documentation and screenshot files, pus
 
 Keep following the PR until it is merged or a specific blocker needs user action. Use bounded CI polling so progress can still be communicated. Inspect failed job logs and fix failures caused by this PR within scope. Rerun a clearly transient failure once; do not loop on unchanged failures or modify product behavior just to obtain a green check.
 
-Before merging, verify that all required checks and the complete `build.yml` run succeeded for the latest PR head. Currently that means the test job and desktop builds for Windows x64, macOS x64, macOS arm64, and Linux x64. Pending, cancelled, missing, and failed checks are not success. Recheck after every new commit or conflict resolution. Honor required reviews and branch protection; never bypass them with an admin merge.
+Before merging, verify all checks required by branch protection for the latest PR head. Honor required reviews and branch protection; never bypass them with an admin merge. Pending, cancelled, missing, and failed required checks are not success.
+
+For changes affecting app source, dependencies, desktop build assets, or build/release workflows, require the complete `build.yml` run for the latest PR head: the test job and desktop builds for Windows x64, macOS x64, macOS arm64, and Linux x64. Recheck after every new commit or conflict resolution affecting those inputs.
+
+For documentation-only changes (prose, screenshots, the static promo site, or skill instructions), reuse a successful default-branch `build.yml` run instead of requiring another full app CI pass. Record its tested SHA and run URL, confirm its test job and all four desktop builds passed, and inspect the diff from that SHA to the proposed release source to prove that app and build inputs are unchanged. A build omitted by documentation path filters is expected and is not a blocker unless branch protection requires it. Do not change workflows or manufacture app edits just to trigger CI for documentation. If app or build inputs changed since the tested SHA, require a new passing build covering those changes.
 
 Merge using a repository-supported method and pin the expected PR head with `gh pr merge --match-head-commit <sha>` where available. Verify the PR is actually merged, recording its merge commit. If merge queues are required, follow the queue to completion. An enabled auto-merge setting is not a completed merge.
 
-Wait for the default-branch build covering the merged source. If site files changed, also verify the Pages deployment and live site update. If a deployment or CI failure persists, report its link and blocker before releasing. If no documentation PR was needed, apply the same CI verification to the default-branch source selected for release.
+After merging, verify app CI evidence for the default-branch release source using the rules above; reuse the recorded passing build when intervening changes are documentation-only. If site files changed, verify the Pages deployment and live site update. If a required deployment or CI failure persists, report its link and blocker before releasing. If no documentation PR was needed, apply the same CI verification to the default-branch source selected for release.
 
 ## 5. Dispatch and verify the release
 
 Re-read the remote release state immediately before dispatch. Confirm the chosen version is still the next minor/patch version and that its tag and release do not already exist. If another release advanced the baseline, recompute the version using the requested bump and announce the new value. Inspect any existing tag, draft, release, or in-progress run for the intended version before acting; resume a known attempt rather than overwriting an unrelated release.
 
-Confirm the default branch includes the documentation merge and that its current head has passing CI. The current workflow creates a new tag from the repository's default branch, even when a different dispatch ref is used. Check for branch movement, assess newly included changes for documentation accuracy, and wait for their CI before dispatching. Do not claim that specifying `--ref` pins the release source.
+Confirm the default branch includes the documentation merge and has the required checks and app CI evidence described in section 4. The current workflow creates a new tag from the repository's default branch, even when a different dispatch ref is used. Check for branch movement and assess newly included changes for documentation accuracy. Documentation-only movement can reuse the recorded passing app build; changes to app or build inputs require passing CI covering those changes before dispatching. Do not claim that specifying `--ref` pins the release source.
 
 With verified values substituted, run:
 

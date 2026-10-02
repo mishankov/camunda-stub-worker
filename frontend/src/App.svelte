@@ -44,6 +44,7 @@
     if(!type){
       type=await call<JobType>('SaveJobType',{id:'',profileId:selectedProfileId,jobType:task.jobType,description:'',mode:'manual',activeScenarioId:null,maxActiveJobs:1})
       jobTypes=[...jobTypes,type]
+      void loadJobCallHistory(type.id)
     }
     return type
   }
@@ -80,6 +81,7 @@
   let errorTimer:number|undefined
   let profiles:Profile[] = [], selectedProfileId = '', jobTypes:JobType[] = [], scenarios:Scenario[] = [], runtime:RuntimeState[] = [], pending:Activation[] = []
   let jobCallHistory:Record<string,CallHistoryItem[]> = {}
+  let jobCallHistoryErrors:Record<string,string> = {}
   let connection:any = { state:'offline', message:'Connection not checked', selectedVersion:'8.5' }
   let dataPath = ''
   let refreshingLiveState = false
@@ -123,7 +125,7 @@
   function showError(message:string) { error=message; if(errorTimer)window.clearTimeout(errorTimer);errorTimer=message?window.setTimeout(()=>{error='';errorTimer=undefined},notificationDurationMs):undefined }
 
   async function run(fn:()=>Promise<any>) { showError(''); busy=true; try { await fn() } catch(e:any) { showError(e?.message || String(e)) } finally { busy=false } }
-  async function reload() { const b = await call<any>('Bootstrap'); appVersion=b.appVersion||''; profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false }
+  async function reload() { const b = await call<any>('Bootstrap'); appVersion=b.appVersion||''; profiles=b.profiles||[]; selectedProfileId=b.selectedProfileId; jobTypes=b.jobTypes||[]; scenarios=b.scenarios||[]; runtime=b.runtime||[]; connection=b.connection; pending=b.pending||[]; dataPath=b.dataPath; for(const a of pending) if(!drafts[a.id]) { drafts[a.id]=parseDraft(a); try { draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||'' } catch { draftScenarios[a.id]='' } } loading=false;void Promise.all(jobTypes.map(type=>loadJobCallHistory(type.id))) }
   async function refreshLiveState() { if(refreshingLiveState)return;refreshingLiveState=true;try{const b=await call<any>('Bootstrap');runtime=b.runtime||[];connection=b.connection;pending=b.pending||[];for(const a of pending)if(!drafts[a.id]){drafts[a.id]=parseDraft(a);try{draftScenarios[a.id]=JSON.parse(a.scenarioSnapshotJson).id||''}catch{draftScenarios[a.id]=''}}}catch{}finally{refreshingLiveState=false} }
   async function selectProfile(event:Event) {
     const select=event.currentTarget as HTMLSelectElement
@@ -260,7 +262,14 @@
     })
   }
 
-  async function loadJobCallHistory(typeId:string){try{jobCallHistory={...jobCallHistory,[typeId]:await call<CallHistoryItem[]>('JobCallHistory',typeId)||[]}}catch{}}
+  async function loadJobCallHistory(typeId:string){
+    jobCallHistoryErrors={...jobCallHistoryErrors,[typeId]:''}
+    try{
+      const entries=await call<CallHistoryItem[]>('JobCallHistory',typeId)||[]
+      jobCallHistory={...jobCallHistory,[typeId]:entries}
+    }
+    catch(e:any){jobCallHistoryErrors={...jobCallHistoryErrors,[typeId]:e?.message||String(e)}}
+  }
   async function loadHistory(page=1){historyPage=page;history=await call('History',{profileId:selectedProfileId,jobType:historyType,outcome:historyOutcome,sendStatus:historyStatus,search:historySearch,fromUtc:historyFrom?new Date(historyFrom+'T00:00:00').toISOString():'',toUtc:historyTo?new Date(historyTo+'T23:59:59.999').toISOString():'',page})}
   function queueHistoryRefresh(){
     if(tab!=='history')return
@@ -346,8 +355,9 @@
               {#if waiting.length}<div class="task-pending" id={`pending-task-${cardKey}`} hidden={!expandedPendingTasks[cardKey]}>{@render pendingQueue(waiting,cardKey,true)}</div>{/if}
               {#if type&&!task.dynamic}{@const callEntries=jobCallHistory[type.id]||[]}
               <details class="call-history">
-                <summary on:click={()=>{if(!jobCallHistory[type.id])void loadJobCallHistory(type.id)}}>Call history <span class="call-history-count">{callEntries.length}</span></summary>
-                {#if callEntries.length}<div class="table-wrap"><table><thead><tr><th>Time</th><th>Process instance</th><th>Input context</th><th>Output context</th><th>Type</th><th>Response</th></tr></thead><tbody>{#each callEntries as entry, i (i+'|'+entry.time)}<tr><td>{fmtDate(entry.time)}</td><td><code>{entry.processInstanceKey}</code></td><td><code class="ctx" title={entry.inputContext}>{entry.inputContext}</code></td><td><code class="ctx" title={entry.outputContext}>{entry.outputContext}</code></td><td>{entry.type==='auto'?'Automatic':'Manual'}</td><td><span class="send {entry.responseType}">{entry.responseType}</span></td></tr>{/each}</tbody></table></div>{:else}<p class="hint">No calls recorded yet</p>{/if}
+                <summary on:click={()=>{if(!jobCallHistory[type.id])void loadJobCallHistory(type.id)}}>Call history{#if jobCallHistory[type.id]}{' '}<span class="call-history-count">{callEntries.length}</span>{/if}</summary>
+                {#if jobCallHistoryErrors[type.id]}<div class="inline-error" role="alert">Call history could not be loaded: {jobCallHistoryErrors[type.id]} <button class="link" on:click={()=>loadJobCallHistory(type.id)}>Retry</button></div>{/if}
+                {#if !jobCallHistory[type.id]&&!jobCallHistoryErrors[type.id]}<p class="hint" role="status">Loading call history…</p>{:else if callEntries.length}<div class="table-wrap"><table><thead><tr><th>Time</th><th>Process instance</th><th>Input context</th><th>Output context</th><th>Type</th><th>Response</th></tr></thead><tbody>{#each callEntries as entry, i (i+'|'+entry.time)}<tr><td>{fmtDate(entry.time)}</td><td><code>{entry.processInstanceKey}</code></td><td><code class="ctx" title={entry.inputContext}>{entry.inputContext}</code></td><td><code class="ctx" title={entry.outputContext}>{entry.outputContext}</code></td><td>{entry.type==='auto'?'Automatic':'Manual'}</td><td><span class="send {entry.responseType}">{entry.responseType}</span></td></tr>{/each}</tbody></table></div>{:else if jobCallHistory[type.id]}<p class="hint">No calls recorded yet</p>{/if}
               </details>
               {/if}
             </article>

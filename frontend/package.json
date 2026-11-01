@@ -11,17 +11,17 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
-    "svelte": "5.57.1",
-    "svelte-check": "4.7.6",
-    "typescript": "5.9.2",
-    "vite": "8.3.1"
+    "svelte": "5.57.3",
+    "svelte-check": "4.7.7",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
   },
   "dependencies": {
     "@codemirror/lang-json": "^6.0.2",
-    "@codemirror/language": "^6.12.4",
+    "@codemirror/language": "^6.13.1",
     "@codemirror/lint": "^6.9.7",
-    "@lezer/highlight": "^1.2.4",
-    "@lucide/svelte": "^1.48.0",
+    "@lezer/highlight": "^1.2.5",
+    "@lucide/svelte": "^1.63.0",
     "codemirror": "^6.0.2"
   }
 }

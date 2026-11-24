@@ -93,7 +93,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: actions/setup-go@v7
-        with: {go-version: '1.25.x', cache: true}
+        with: {go-version-file: go.mod, cache: true}
       - uses: actions/setup-node@v7
         with: {node-version: '24', cache: npm, cache-dependency-path: frontend/package-lock.json}
       - run: npm ci && npm run check && npm run build
@@ -127,7 +127,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
       - uses: actions/setup-go@v7
-        with: {go-version: '1.25.x', cache: true}
+        with: {go-version-file: go.mod, cache: true}
       - uses: actions/setup-node@v7
         with: {node-version: '24', cache: npm, cache-dependency-path: frontend/package-lock.json}
       - if: runner.os == 'Linux'

@@ -74,8 +74,8 @@ Download the build for your operating system from the [latest GitHub release](ht
 | Platform | Release package | Requirements |
 | --- | --- | --- |
 | Windows 10/11 x64 | ZIP archive | WebView2 Runtime |
-| macOS 10.13+ x64 | DMG | Intel Mac |
-| macOS 11+ arm64 | DMG | Apple silicon Mac |
+| macOS 13+ x64 | DMG | Intel Mac |
+| macOS 13+ arm64 | DMG | Apple silicon Mac |
 | Linux x64 | `.tar.gz` archive | GTK3 and WebKit2GTK 4.1 |
 
 Current artifacts are not publisher-signed or notarized. On macOS, open the DMG, drag **Camunda Stub Worker** to **Applications**, and remove the quarantine attribute before the first launch:
@@ -175,11 +175,11 @@ For deployment, select **GitHub Actions** in the repository's **Settings → Pag
 
 Dependencies are pinned in `go.mod` and `frontend/package-lock.json`:
 
-- Go **1.25.0**
-- Wails runtime **2.16.0**; the build workflows use CLI **2.15.0**
+- Go **1.27.4**
+- Wails runtime **2.17.0**; the build workflows use CLI **2.15.0**
 - Svelte **5.57.1**, Vite **8.3.1**, and TypeScript **5.9.2**
 - Camunda Go client / Zeebe protocol **8.5.25**
-- `modernc.org/sqlite` **1.59.0** (pure Go; no system SQLite dependency)
+- `modernc.org/sqlite` **1.61.0** (pure Go; no system SQLite dependency)
 
 The UI uses CodeMirror for JSON editing, syntax highlighting, and validation. Update checks run in the background against published GitHub Releases and display an in-app download notification when a newer version is available.
 

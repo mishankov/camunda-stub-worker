@@ -1,6 +1,6 @@
 module github.com/mishankov/camunda-stub-worker
 
-go 1.26.0
+go 1.27.4
 
 require (
 	github.com/camunda/zeebe/clients/go/v8 v8.5.25

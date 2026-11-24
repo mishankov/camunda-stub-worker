@@ -177,7 +177,7 @@ Dependencies are pinned in `go.mod` and `frontend/package-lock.json`:
 
 - Go **1.27.4**
 - Wails runtime **2.17.0**; the build workflows use CLI **2.15.0**
-- Svelte **5.57.1**, Vite **8.3.1**, and TypeScript **5.9.2**
+- Svelte **5.57.3**, Vite **8.3.5**, and TypeScript **6.0.3**, with TypeScript **7.0.2** used by `svelte-check`
 - Camunda Go client / Zeebe protocol **8.5.25**
 - `modernc.org/sqlite` **1.61.0** (pure Go; no system SQLite dependency)
 
